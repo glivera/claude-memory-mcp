@@ -1,0 +1,41 @@
+services:
+  memory-mcp:
+    build:
+      context: .
+      target: production
+      tags:
+        - "memory-mcp:latest"
+    image: memory-mcp:latest
+    env_file: .env
+    ports:
+      - "3101:3101"
+    environment:
+      - MCP_PORT=3101
+    restart: unless-stopped
+
+  dev:
+    build:
+      context: .
+      target: base
+    volumes:
+      - .:/app
+      - memory_mcp_node_modules:/app/node_modules
+    env_file: .env
+    environment:
+      - MCP_PORT=3101
+    ports:
+      - "3101:3101"
+    entrypoint: ["npx", "tsx", "src/index.ts"]
+
+  test:
+    build:
+      context: .
+      target: base
+    volumes:
+      - .:/app
+      - memory_mcp_node_modules:/app/node_modules
+    env_file: .env
+    entrypoint: ["npx", "vitest"]
+
+volumes:
+  memory_mcp_node_modules:
