@@ -28,7 +28,7 @@ function formatError(err: unknown): { content: Array<{ type: 'text'; text: strin
 function registerTools(server: McpServer): void {
   server.tool(
     'remember',
-    'Save a memory entry with auto-generated embedding for semantic search',
+    'Save a decision, bug fix, pattern, convention, or context to long-term memory. Call after: architectural decisions, resolved bugs, discovered patterns, new conventions, session summaries. Requires project_id (kebab-case from directory name) and memory_type.',
     rememberInputSchema.shape,
     async (input) => {
       try {
@@ -42,7 +42,7 @@ function registerTools(server: McpServer): void {
 
   server.tool(
     'recall',
-    'Semantic search over memories using vector similarity',
+    'Search memories by meaning. Call before: starting non-trivial work, using APIs/integrations, setting up features. Use project_id to search within a project, omit for cross-project search. Use since_days to filter recent memories (e.g., "what happened this week").',
     recallInputSchema.shape,
     async (input) => {
       try {
@@ -56,7 +56,7 @@ function registerTools(server: McpServer): void {
 
   server.tool(
     'forget',
-    'Soft-delete memories by setting expires_at (never hard-deletes)',
+    'Soft-delete outdated or incorrect memories. Use memory_id to forget one entry, or project_id to forget all for a project. Add older_than_days to only forget old entries. Never hard-deletes — data can be recovered.',
     forgetInputSchemaBase.shape,
     async (input) => {
       try {
@@ -70,7 +70,7 @@ function registerTools(server: McpServer): void {
 
   server.tool(
     'project_status',
-    'Return project overview and memory stats (no embedding generated)',
+    'Get memory counts and latest session context for a project. Call at session start to understand current state. Omit project_id to see all projects.',
     projectStatusInputSchema.shape,
     async (input) => {
       try {

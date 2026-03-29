@@ -17,7 +17,7 @@ function formatError(err: unknown): ToolResult {
 export function registerPatternTools(server: McpServer): void {
   server.tool(
     'pattern_store',
-    'Store or merge a reusable work pattern with automatic deduplication (similarity > 0.9)',
+    'Save a reusable work pattern (Docker setup, migration strategy, debugging approach, etc.). Auto-deduplicates: if a similar pattern exists, merges and increments count. When count reaches 3, flags as skill candidate. Call whenever you notice a repeating approach across projects.',
     patternStoreInputSchema.shape,
     async (input) => {
       try {
@@ -31,7 +31,7 @@ export function registerPatternTools(server: McpServer): void {
 
   server.tool(
     'pattern_search',
-    'Semantic search across stored skill patterns',
+    'Search stored work patterns by meaning. Call before starting non-trivial tasks to check if a known approach exists. Filter by category (devops, code, supabase, etc.) or project.',
     patternSearchInputSchema.shape,
     async (input) => {
       try {
@@ -45,7 +45,7 @@ export function registerPatternTools(server: McpServer): void {
 
   server.tool(
     'pattern_mature',
-    'Retrieve mature patterns (seen 3+ times) ready for skill creation',
+    'List patterns seen 3+ times — candidates for converting into SKILL.md files. Returns patterns grouped by category with all accumulated examples. Call periodically or when user asks about skill generation.',
     patternMatureInputSchema.shape,
     async (input) => {
       try {
@@ -59,7 +59,7 @@ export function registerPatternTools(server: McpServer): void {
 
   server.tool(
     'pattern_mark_as_skill',
-    'Mark patterns as converted to SKILL.md files',
+    'Mark patterns as converted to SKILL.md files so they stop appearing in pattern_mature results. Call after generating a skill from a mature pattern.',
     patternMarkInputSchema.shape,
     async (input) => {
       try {

@@ -173,6 +173,62 @@ describe('handleRecall', () => {
     expect(result[0].content.length).toBeLessThan(10000);
   });
 
+  describe('since_days filtering', () => {
+    it('should filter out memories older than since_days', async () => {
+      const now = new Date();
+      const twoDaysAgo = new Date(now);
+      twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+      const tenDaysAgo = new Date(now);
+      tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+
+      mockMatchMemories.mockResolvedValue([
+        {
+          id: 'recent', project_id: 'proj', memory_type: 'context',
+          title: 'Recent', content: 'Recent work.', tags: [],
+          similarity: 0.8, session_id: null, created_at: twoDaysAgo.toISOString(),
+        },
+        {
+          id: 'old', project_id: 'proj', memory_type: 'decision',
+          title: 'Old', content: 'Old decision.', tags: [],
+          similarity: 0.9, session_id: null, created_at: tenDaysAgo.toISOString(),
+        },
+      ]);
+
+      const result = await handleRecall({ query: 'work', since_days: 7 });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe('recent');
+    });
+
+    it('should return all memories when since_days not provided', async () => {
+      const result = await handleRecall({ query: 'test' });
+      expect(result).toHaveLength(2);
+    });
+
+    it('should request 3x more results when since_days is set to compensate for filtering', async () => {
+      await handleRecall({ query: 'test', since_days: 7, limit: 5 });
+
+      expect(mockMatchMemories).toHaveBeenCalledWith(
+        fakeEmbedding, null, null, 15, 0.7
+      );
+    });
+
+    it('should still respect limit after date filtering', async () => {
+      const now = new Date();
+      const recentResults = Array.from({ length: 10 }, (_, i) => ({
+        id: `id-${i}`, project_id: 'proj', memory_type: 'context',
+        title: `Memory ${i}`, content: `Content ${i}`, tags: [],
+        similarity: 0.8 - i * 0.01, session_id: null,
+        created_at: now.toISOString(),
+      }));
+      mockMatchMemories.mockResolvedValue(recentResults);
+
+      const result = await handleRecall({ query: 'test', since_days: 7, limit: 3 });
+
+      expect(result).toHaveLength(3);
+    });
+  });
+
   it('should map MatchResult fields to TokenCappedEntry', async () => {
     const result = await handleRecall({ query: 'test' });
 
