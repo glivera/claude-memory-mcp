@@ -86,7 +86,7 @@ export async function expireMemoryById(memoryId: string): Promise<number> {
     .from(TABLE)
     .update({ expires_at: new Date().toISOString() })
     .eq('id', memoryId)
-    .is('expires_at', null)
+    .or('expires_at.is.null,expires_at.gt.now()')
     .select('id');
 
   if (error) throw new DbError(`Expire by ID failed: ${error.message}`, { cause: error });
@@ -102,7 +102,7 @@ export async function expireMemoriesByProject(
     .from(TABLE)
     .update({ expires_at: new Date().toISOString() })
     .eq('project_id', projectId)
-    .is('expires_at', null);
+    .or('expires_at.is.null,expires_at.gt.now()');
 
   if (olderThanDays !== undefined) {
     const cutoff = new Date();
