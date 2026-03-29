@@ -287,6 +287,7 @@ Semantic search across memories using vector similarity.
 | `project_id` | string | No | Filter to specific project (omit for cross-project search) |
 | `memory_type` | string | No | Filter by memory type |
 | `limit` | number | No | Max results (1–20, default: 5) |
+| `since_days` | number | No | Only return memories from the last N days (e.g., `since_days: 7` for this week) |
 
 Returns memories ranked by semantic similarity, capped at `RECALL_TOKEN_CAP` tokens.
 
@@ -479,7 +480,7 @@ src/
     patterns-index.ts   — Barrel: registers all 4 pattern tools
 migrations/
   002_skill_patterns.sql — Skill patterns table, indexes, RPC functions
-tests/unit/             — 121 unit tests (Vitest, mocks Supabase + OpenAI)
+tests/unit/             — 125 unit tests (Vitest, mocks Supabase + OpenAI)
 ```
 
 ## License
