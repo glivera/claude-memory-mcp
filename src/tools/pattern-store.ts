@@ -7,7 +7,7 @@ const PATTERN_CATEGORIES = [
   'n8n', 'supabase', 'devops', 'client', 'content', 'code', 'architecture', 'other',
 ] as const;
 
-const DEDUP_THRESHOLD = 0.9;
+const DEDUP_THRESHOLD = 0.75;
 const TABLE = 'skill_patterns';
 
 export const patternStoreInputSchema = z.object({

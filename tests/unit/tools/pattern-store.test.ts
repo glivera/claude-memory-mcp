@@ -150,14 +150,14 @@ describe('handlePatternStore', () => {
       expect(updateCall.examples[1].text).toBe(validInput.example);
     });
 
-    it('should call RPC with dedup threshold 0.9', async () => {
+    it('should call RPC with dedup threshold 0.75', async () => {
       const mockClient = createMockClient({ data: [], error: null });
       mockGetSupabaseClient.mockReturnValue(mockClient as any);
 
       await handlePatternStore(validInput);
 
       expect(mockClient.rpc).toHaveBeenCalledWith('match_skill_patterns', expect.objectContaining({
-        match_threshold: 0.9,
+        match_threshold: 0.75,
         match_count: 1,
       }));
     });
