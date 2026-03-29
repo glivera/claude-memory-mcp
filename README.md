@@ -1,16 +1,23 @@
 # claude-memory-mcp
 
-A persistent vector memory server for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) using the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). Gives Claude long-term memory across sessions — it can remember decisions, bugs, patterns, and context, then recall them semantically in future conversations.
+A persistent vector memory server for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) using the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). Gives Claude long-term memory across sessions — it can remember decisions, bugs, patterns, and context, then recall them semantically in future conversations. Includes a **Skill Patterns** system that tracks reusable work patterns and identifies candidates for automated skill generation.
 
 ## How It Works
 
 ```
 Claude Code  ──HTTP POST──▸  memory-mcp container (Express + MCP SDK)
                                  │
-                                 ├── remember  → OpenAI embed → Supabase insert
-                                 ├── recall    → OpenAI embed → Supabase vector search
-                                 ├── forget    → Supabase soft-delete (expires_at)
-                                 └── project_status → Supabase stats query
+                                 │  Memory Tools
+                                 ├── remember        → OpenAI embed → Supabase insert
+                                 ├── recall           → OpenAI embed → Supabase vector search
+                                 ├── forget           → Supabase soft-delete (expires_at)
+                                 ├── project_status  → Supabase stats query
+                                 │
+                                 │  Skill Pattern Tools
+                                 ├── pattern_store          → deduplicate & store work patterns
+                                 ├── pattern_search         → semantic search across patterns
+                                 ├── pattern_mature         → find patterns ready for skill creation
+                                 └── pattern_mark_as_skill  → mark patterns as converted to SKILL.md
 ```
 
 - **Transport:** Streamable HTTP on port 3101 (multiple Claude Code sessions share one server)
@@ -108,6 +115,88 @@ create or replace view all_global_memory_stats as
   from all_global_project_memory
   where expires_at is null or expires_at > now()
   group by project_id, memory_type;
+```
+
+Then run the Skill Patterns migration:
+
+```sql
+-- Skill patterns table for tracking reusable work patterns
+create table if not exists skill_patterns (
+  id uuid primary key default gen_random_uuid(),
+  pattern_id text not null,
+  description text not null,
+  category text not null check (category in (
+    'n8n', 'supabase', 'devops', 'client', 'content', 'code', 'architecture', 'other'
+  )),
+  project text,
+  examples jsonb not null default '[]'::jsonb,
+  count int not null default 1,
+  first_seen timestamptz not null default now(),
+  last_seen timestamptz not null default now(),
+  proposed_skill boolean not null default false,
+  skill_created boolean not null default false,
+  embedding vector(1536) not null,
+  constraint skill_patterns_count_positive check (count > 0)
+);
+
+-- Indexes
+create index if not exists skill_patterns_embedding_idx
+  on skill_patterns using ivfflat (embedding vector_cosine_ops) with (lists = 100);
+create index if not exists skill_patterns_category_idx
+  on skill_patterns (category);
+create index if not exists skill_patterns_count_idx
+  on skill_patterns (count) where skill_created = false;
+create index if not exists skill_patterns_project_idx
+  on skill_patterns (project) where project is not null;
+
+-- Semantic search for pattern deduplication
+create or replace function match_skill_patterns(
+  query_embedding vector(1536),
+  match_threshold float default 0.9,
+  match_count int default 1,
+  filter_category text default null,
+  filter_project text default null
+)
+returns table (
+  id uuid, pattern_id text, description text, category text,
+  project text, examples jsonb, count int, first_seen timestamptz,
+  last_seen timestamptz, proposed_skill boolean, skill_created boolean,
+  similarity float
+)
+language sql stable
+as $$
+  select sp.id, sp.pattern_id, sp.description, sp.category, sp.project,
+    sp.examples, sp.count, sp.first_seen, sp.last_seen, sp.proposed_skill,
+    sp.skill_created, 1 - (sp.embedding <=> query_embedding) as similarity
+  from skill_patterns sp
+  where 1 - (sp.embedding <=> query_embedding) > match_threshold
+    and (filter_category is null or sp.category = filter_category)
+    and (filter_project is null or sp.project = filter_project)
+  order by sp.embedding <=> query_embedding
+  limit match_count;
+$$;
+
+-- Get mature patterns ready for skill creation
+create or replace function get_mature_patterns(
+  min_count int default 3,
+  filter_category text default null,
+  exclude_created boolean default true
+)
+returns table (
+  id uuid, pattern_id text, description text, category text,
+  project text, examples jsonb, count int, first_seen timestamptz,
+  last_seen timestamptz
+)
+language sql stable
+as $$
+  select sp.id, sp.pattern_id, sp.description, sp.category, sp.project,
+    sp.examples, sp.count, sp.first_seen, sp.last_seen
+  from skill_patterns sp
+  where sp.count >= min_count
+    and (not exclude_created or sp.skill_created = false)
+    and (filter_category is null or sp.category = filter_category)
+  order by sp.count desc, sp.last_seen desc;
+$$;
 ```
 
 ### 2. Clone and Configure
@@ -221,6 +310,69 @@ Get memory counts and latest context per project.
 |---|---|---|---|
 | `project_id` | string | No | Filter to specific project (omit for all projects) |
 
+---
+
+## Skill Pattern Tools
+
+Skill patterns track **reusable work approaches** that Claude discovers across sessions. When a pattern is seen 3+ times, it becomes a candidate for generating a Claude Code [custom slash command](https://docs.anthropic.com/en/docs/claude-code/slash-commands) (SKILL.md file).
+
+**How it works:**
+1. During work, Claude calls `pattern_store` when it notices a repeating approach
+2. If a similar pattern already exists (cosine similarity > 0.9), it merges — incrementing the count and appending the new example
+3. If no similar pattern exists, a new one is created
+4. When a pattern reaches 3+ occurrences, it's flagged as `proposed_skill = true`
+5. Use `pattern_mature` to see which patterns are ready for skill generation
+6. After creating a SKILL.md file, mark the pattern with `pattern_mark_as_skill`
+
+### `pattern_store`
+
+Store a new pattern or merge into an existing one (automatic deduplication).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `description` | string | Yes | What the pattern is and when to apply it (10–1000 chars) |
+| `category` | enum | Yes | One of: `n8n`, `supabase`, `devops`, `client`, `content`, `code`, `architecture`, `other` |
+| `project` | string | No | Project name, or omit for universal patterns |
+| `example` | string | Yes | Concrete example from the current session (10–2000 chars) |
+
+**Returns:**
+- `{ action: "created", pattern_id, count: 1 }` — new pattern
+- `{ action: "merged", pattern_id, new_count, proposed_skill }` — merged into existing
+
+### `pattern_search`
+
+Semantic search across all stored patterns.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `query` | string | Yes | Natural language search query |
+| `category` | string | No | Filter by category |
+| `project` | string | No | Filter by project |
+| `min_count` | number | No | Only return patterns seen at least N times |
+| `limit` | number | No | Max results (1–50, default: 10) |
+
+### `pattern_mature`
+
+Retrieve patterns that have been seen enough times to be worth converting into skills.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `min_count` | number | No | Minimum occurrence count (default: 3) |
+| `category` | string | No | Filter by category |
+| `exclude_created` | boolean | No | Exclude patterns already converted to skills (default: true) |
+
+Returns patterns grouped by category with full example history.
+
+### `pattern_mark_as_skill`
+
+Mark patterns as converted to SKILL.md files so they no longer appear in `pattern_mature`.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `pattern_ids` | string[] (UUIDs) | Yes | IDs of patterns to mark |
+
+---
+
 ## Teaching Claude to Use Memory
 
 Add instructions to `~/.claude/CLAUDE.md` (global) or your project's `CLAUDE.md` to tell Claude when and how to use memory. Here's a recommended configuration:
@@ -228,7 +380,9 @@ Add instructions to `~/.claude/CLAUDE.md` (global) or your project's `CLAUDE.md`
 ```markdown
 ## Memory System
 
-You have a persistent memory MCP server with 4 tools: `remember`, `recall`, `forget`, `project_status`.
+You have a persistent memory MCP server with 8 tools:
+- **Memory:** `remember`, `recall`, `forget`, `project_status`
+- **Skill Patterns:** `pattern_store`, `pattern_search`, `pattern_mature`, `pattern_mark_as_skill`
 
 ### Determining project_id
 
@@ -267,6 +421,23 @@ Save a session summary:
 
 Save reusable knowledge without `project_id`:
 `remember(memory_type="pattern", title="...", content="...", tags=["cross-project", ...])`
+
+### Skill Patterns (automatic)
+
+**Store patterns when you notice repeating approaches:**
+- Same debugging strategy used across projects → `pattern_store(category="code", ...)`
+- Same Docker configuration pattern → `pattern_store(category="devops", ...)`
+- Same Supabase migration approach → `pattern_store(category="supabase", ...)`
+- Same client communication template → `pattern_store(category="client", ...)`
+
+**Check before creating skills:**
+- Call `pattern_mature()` to see patterns seen 3+ times
+- Generate a SKILL.md file from the pattern's examples
+- Call `pattern_mark_as_skill(pattern_ids=[...])` to mark as done
+
+**Search existing patterns:**
+- Before starting non-trivial work: `pattern_search(query=<task description>)`
+- Filter by domain: `pattern_search(query="...", category="devops")`
 ```
 
 ## Similarity Threshold
@@ -301,7 +472,14 @@ src/
     recall.ts           — Embed query -> vector search -> token-capped response
     forget.ts           — Soft-delete by ID, project, or age
     project-status.ts   — Stats view query + latest context
-tests/unit/             — Unit tests (Vitest, mocks Supabase + OpenAI)
+    pattern-store.ts    — Smart upsert with deduplication (similarity > 0.9)
+    pattern-search.ts   — Semantic search across skill patterns
+    pattern-mature.ts   — Find patterns seen 3+ times (skill candidates)
+    pattern-mark.ts     — Mark patterns as converted to SKILL.md
+    patterns-index.ts   — Barrel: registers all 4 pattern tools
+migrations/
+  002_skill_patterns.sql — Skill patterns table, indexes, RPC functions
+tests/unit/             — 121 unit tests (Vitest, mocks Supabase + OpenAI)
 ```
 
 ## License
