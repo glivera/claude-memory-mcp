@@ -65,16 +65,21 @@ export async function matchMemories(
   filterProject: string | null,
   filterType: string | null,
   matchCount: number,
-  threshold: number
+  threshold: number,
+  minCreatedAt?: string | null
 ): Promise<MatchResult[]> {
   const db = getSupabaseClient();
-  const { data, error } = await db.rpc('all_global_match_memories', {
+  const params: Record<string, unknown> = {
     query_embedding: queryEmbedding,
     filter_project: filterProject,
     filter_type: filterType,
     match_count: matchCount,
     threshold,
-  });
+  };
+  if (minCreatedAt) {
+    params.min_created_at = minCreatedAt;
+  }
+  const { data, error } = await db.rpc('all_global_match_memories', params);
 
   if (error) throw new DbError(`Match query failed: ${error.message}`, { cause: error });
   return (data ?? []) as MatchResult[];

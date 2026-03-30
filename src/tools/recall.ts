@@ -28,22 +28,23 @@ export async function handleRecall(input: RecallInput) {
 
   const queryEmbedding = await generateEmbedding(query);
 
+  let minCreatedAt: string | null = null;
+  if (since_days) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - since_days);
+    minCreatedAt = cutoff.toISOString();
+  }
+
   const results = await matchMemories(
     queryEmbedding,
     project_id ?? null,
     memory_type ?? null,
-    since_days ? (limit ?? config.DEFAULT_RECALL_LIMIT) * 3 : (limit ?? config.DEFAULT_RECALL_LIMIT),
-    config.SIMILARITY_THRESHOLD
+    limit ?? config.DEFAULT_RECALL_LIMIT,
+    config.SIMILARITY_THRESHOLD,
+    minCreatedAt
   );
 
-  let filtered = results;
-  if (since_days) {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - since_days);
-    filtered = results.filter((r) => new Date(r.created_at) >= cutoff);
-  }
-
-  const entries: TokenCappedEntry[] = filtered
+  const entries: TokenCappedEntry[] = results
     .slice(0, limit ?? config.DEFAULT_RECALL_LIMIT)
     .map((r) => ({
       id: r.id,

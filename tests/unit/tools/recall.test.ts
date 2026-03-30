@@ -97,7 +97,8 @@ describe('handleRecall', () => {
       'my-project',
       'decision',
       10,
-      0.7
+      0.7,
+      null
     );
   });
 
@@ -109,7 +110,8 @@ describe('handleRecall', () => {
       null,
       null,
       5,
-      0.7
+      0.7,
+      null
     );
   });
 
@@ -121,7 +123,8 @@ describe('handleRecall', () => {
       null,
       null,
       5,
-      0.7
+      0.7,
+      null
     );
   });
 
@@ -174,46 +177,43 @@ describe('handleRecall', () => {
   });
 
   describe('since_days filtering', () => {
-    it('should filter out memories older than since_days', async () => {
-      const now = new Date();
-      const twoDaysAgo = new Date(now);
-      twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
-      const tenDaysAgo = new Date(now);
-      tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+    it('should pass min_created_at to matchMemories when since_days is set', async () => {
+      const before = new Date();
+      before.setDate(before.getDate() - 7);
 
-      mockMatchMemories.mockResolvedValue([
-        {
-          id: 'recent', project_id: 'proj', memory_type: 'context',
-          title: 'Recent', content: 'Recent work.', tags: [],
-          similarity: 0.8, session_id: null, created_at: twoDaysAgo.toISOString(),
-        },
-        {
-          id: 'old', project_id: 'proj', memory_type: 'decision',
-          title: 'Old', content: 'Old decision.', tags: [],
-          similarity: 0.9, session_id: null, created_at: tenDaysAgo.toISOString(),
-        },
-      ]);
+      await handleRecall({ query: 'work', since_days: 7 });
 
-      const result = await handleRecall({ query: 'work', since_days: 7 });
-
-      expect(result).toHaveLength(1);
-      expect(result[0].id).toBe('recent');
-    });
-
-    it('should return all memories when since_days not provided', async () => {
-      const result = await handleRecall({ query: 'test' });
-      expect(result).toHaveLength(2);
-    });
-
-    it('should request 3x more results when since_days is set to compensate for filtering', async () => {
-      await handleRecall({ query: 'test', since_days: 7, limit: 5 });
+      const after = new Date();
+      after.setDate(after.getDate() - 7);
 
       expect(mockMatchMemories).toHaveBeenCalledWith(
-        fakeEmbedding, null, null, 15, 0.7
+        fakeEmbedding, null, null, 5, 0.7,
+        expect.any(String)
+      );
+
+      const passedDate = new Date(mockMatchMemories.mock.calls[0][5] as string);
+      expect(passedDate.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(passedDate.getTime()).toBeLessThanOrEqual(after.getTime());
+    });
+
+    it('should pass null min_created_at when since_days not provided', async () => {
+      await handleRecall({ query: 'test' });
+
+      expect(mockMatchMemories).toHaveBeenCalledWith(
+        fakeEmbedding, null, null, 5, 0.7, null
       );
     });
 
-    it('should still respect limit after date filtering', async () => {
+    it('should not request extra results when since_days is set (filtering is server-side)', async () => {
+      await handleRecall({ query: 'test', since_days: 7, limit: 5 });
+
+      expect(mockMatchMemories).toHaveBeenCalledWith(
+        fakeEmbedding, null, null, 5, 0.7,
+        expect.any(String)
+      );
+    });
+
+    it('should still respect limit after server-side date filtering', async () => {
       const now = new Date();
       const recentResults = Array.from({ length: 10 }, (_, i) => ({
         id: `id-${i}`, project_id: 'proj', memory_type: 'context',
