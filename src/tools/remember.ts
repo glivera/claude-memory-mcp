@@ -17,6 +17,7 @@ export const rememberInputSchema = z.object({
   content: z.string().min(1),
   tags: z.array(z.string()).optional().default([]),
   expires_in_days: z.number().positive().optional(),
+  session_id: z.string().optional(),
 });
 
 export type RememberInput = z.infer<typeof rememberInputSchema>;
@@ -29,7 +30,7 @@ export async function handleRemember(input: RememberInput) {
     );
   }
 
-  const { project_id, memory_type, title, content, tags, expires_in_days } = parsed.data;
+  const { project_id, memory_type, title, content, tags, expires_in_days, session_id } = parsed.data;
 
   const embedding = await generateEmbedding(`${title} ${content}`);
 
@@ -44,7 +45,7 @@ export async function handleRemember(input: RememberInput) {
     content,
     tags,
     embedding,
-    session_id: null,
+    session_id: session_id ?? null,
     expires_at: expiresAt,
   });
 

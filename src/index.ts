@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import express, { Request, Response } from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
@@ -89,78 +88,34 @@ function registerTools(server: McpServer): void {
 const app = express();
 app.use(express.json());
 
-// Track active sessions
-const transports: Record<string, StreamableHTTPServerTransport> = {};
-
 // Health check
 app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok', sessions: Object.keys(transports).length });
+  res.json({ status: 'ok' });
 });
 
-// POST /mcp — handle MCP requests
+// POST /mcp — stateless: each request gets its own server+transport
 app.post('/mcp', async (req: Request, res: Response) => {
-  const sessionId = req.headers['mcp-session-id'] as string | undefined;
-
-  if (sessionId && transports[sessionId]) {
-    await transports[sessionId].handleRequest(req, res, req.body);
-    return;
-  }
-
-  // New session — check if it's an initialize request
-  const body = req.body;
-  const isInit = body && typeof body === 'object' && body.method === 'initialize';
-
-  if (isInit) {
-    const transport = new StreamableHTTPServerTransport({
-      sessionIdGenerator: () => randomUUID(),
-      onsessioninitialized: (id: string) => {
-        transports[id] = transport;
-        console.error(`[memory-mcp] Session initialized: ${id} (total: ${Object.keys(transports).length})`);
-      },
-    });
-
-    transport.onclose = () => {
-      if (transport.sessionId) {
-        delete transports[transport.sessionId];
-        console.error(`[memory-mcp] Session closed: ${transport.sessionId} (total: ${Object.keys(transports).length})`);
-      }
-    };
-
-    const server = new McpServer({ name: 'memory', version: '0.1.0' });
-    registerTools(server);
-    await server.connect(transport);
-    await transport.handleRequest(req, res, body);
-    return;
-  }
-
-  res.status(400).json({
-    jsonrpc: '2.0',
-    error: { code: -32000, message: 'Invalid or missing session. Send an initialize request first.' },
-    id: null,
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined,
   });
+
+  const server = new McpServer({ name: 'memory', version: '0.1.0' });
+  registerTools(server);
+  await server.connect(transport);
+  await transport.handleRequest(req, res, req.body);
 });
 
-// GET /mcp — SSE stream for server-to-client notifications
-app.get('/mcp', async (req: Request, res: Response) => {
-  const sessionId = req.headers['mcp-session-id'] as string;
-  if (sessionId && transports[sessionId]) {
-    await transports[sessionId].handleRequest(req, res);
-  } else {
-    res.status(400).json({ error: 'Invalid or missing session' });
-  }
+// GET /mcp — SSE not supported in stateless mode
+app.get('/mcp', (_req: Request, res: Response) => {
+  res.status(405).json({ error: 'SSE not supported in stateless mode' });
 });
 
-// DELETE /mcp — close session
-app.delete('/mcp', async (req: Request, res: Response) => {
-  const sessionId = req.headers['mcp-session-id'] as string;
-  if (sessionId && transports[sessionId]) {
-    await transports[sessionId].handleRequest(req, res);
-  } else {
-    res.status(400).json({ error: 'Invalid or missing session' });
-  }
+// DELETE /mcp — no sessions to close
+app.delete('/mcp', (_req: Request, res: Response) => {
+  res.status(405).json({ error: 'Sessions not supported in stateless mode' });
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.error(`[memory-mcp] HTTP server listening on port ${PORT}`);
+  console.error(`[memory-mcp] Stateless HTTP server listening on port ${PORT}`);
   console.error(`[memory-mcp] MCP endpoint: http://localhost:${PORT}/mcp`);
 });
