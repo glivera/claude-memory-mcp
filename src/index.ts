@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { rememberInputSchema, handleRemember } from './tools/remember.js';
 import { recallInputSchema, handleRecall } from './tools/recall.js';
 import { forgetInputSchemaBase, handleForget } from './tools/forget.js';
@@ -8,6 +9,7 @@ import { projectStatusInputSchema, handleProjectStatus } from './tools/project-s
 import { ValidationError, EmbeddingError, DbError } from './errors.js';
 import { registerPatternTools } from './tools/patterns-index.js';
 
+const TRANSPORT = process.env.MCP_TRANSPORT || 'http';
 const PORT = parseInt(process.env.MCP_PORT || '3100', 10);
 
 function formatError(err: unknown): { content: Array<{ type: 'text'; text: string }>; isError: true } {
@@ -85,37 +87,48 @@ function registerTools(server: McpServer): void {
   registerPatternTools(server);
 }
 
-const app = express();
-app.use(express.json());
-
-// Health check
-app.get('/health', (_req: Request, res: Response) => {
-  res.json({ status: 'ok' });
-});
-
-// POST /mcp — stateless: each request gets its own server+transport
-app.post('/mcp', async (req: Request, res: Response) => {
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-  });
-
+async function startStdio(): Promise<void> {
   const server = new McpServer({ name: 'memory', version: '0.1.0' });
   registerTools(server);
+  const transport = new StdioServerTransport();
   await server.connect(transport);
-  await transport.handleRequest(req, res, req.body);
-});
+  console.error('[memory-mcp] Running in stdio mode');
+}
 
-// GET /mcp — SSE not supported in stateless mode
-app.get('/mcp', (_req: Request, res: Response) => {
-  res.status(405).json({ error: 'SSE not supported in stateless mode' });
-});
+function startHttp(): void {
+  const app = express();
+  app.use(express.json());
 
-// DELETE /mcp — no sessions to close
-app.delete('/mcp', (_req: Request, res: Response) => {
-  res.status(405).json({ error: 'Sessions not supported in stateless mode' });
-});
+  app.get('/health', (_req: Request, res: Response) => {
+    res.json({ status: 'ok' });
+  });
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.error(`[memory-mcp] Stateless HTTP server listening on port ${PORT}`);
-  console.error(`[memory-mcp] MCP endpoint: http://localhost:${PORT}/mcp`);
-});
+  app.post('/mcp', async (req: Request, res: Response) => {
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+    });
+    const server = new McpServer({ name: 'memory', version: '0.1.0' });
+    registerTools(server);
+    await server.connect(transport);
+    await transport.handleRequest(req, res, req.body);
+  });
+
+  app.get('/mcp', (_req: Request, res: Response) => {
+    res.status(405).json({ error: 'SSE not supported in stateless mode' });
+  });
+
+  app.delete('/mcp', (_req: Request, res: Response) => {
+    res.status(405).json({ error: 'Sessions not supported in stateless mode' });
+  });
+
+  app.listen(PORT, '0.0.0.0', () => {
+    console.error(`[memory-mcp] Stateless HTTP server listening on port ${PORT}`);
+    console.error(`[memory-mcp] MCP endpoint: http://localhost:${PORT}/mcp`);
+  });
+}
+
+if (TRANSPORT === 'stdio') {
+  startStdio();
+} else {
+  startHttp();
+}

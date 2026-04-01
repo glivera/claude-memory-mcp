@@ -20,7 +20,7 @@ Claude Code  ──HTTP POST──▸  memory-mcp container (Express + MCP SDK)
                                  └── pattern_mark_as_skill  → mark patterns as converted to SKILL.md
 ```
 
-- **Transport:** Streamable HTTP on port 3101 (multiple Claude Code sessions share one server)
+- **Transport:** Streamable HTTP on port 3101 (multiple Claude Code sessions share one server), stdio also supported
 - **Embeddings:** OpenAI `text-embedding-3-small` (1536 dimensions)
 - **Storage:** Supabase PostgreSQL + pgvector
 - **Runtime:** Node.js 20 in Docker (Alpine)
@@ -231,6 +231,7 @@ MCP_PORT=3101
 | `RECALL_TOKEN_CAP` | No | Max tokens returned by recall. Default: `2000` |
 | `DEFAULT_RECALL_LIMIT` | No | Max memories per recall. Default: `5` |
 | `MCP_PORT` | No | Server port. Default: `3101` |
+| `MCP_TRANSPORT` | No | `http` (default) or `stdio` |
 
 ### 3. Build and Run
 
@@ -247,20 +248,67 @@ curl -s http://localhost:3101/health
 
 ### 4. Connect to Claude Code
 
-Add the MCP server to your Claude Code configuration. Edit (or create) `~/.claude/mcp.json`:
+The easiest way is via the CLI:
+
+```bash
+claude mcp add --transport http \
+  --header "Authorization: Bearer memory-mcp-local" \
+  -s user memory http://localhost:3101/mcp
+```
+
+Or manually add to `~/.claude.json` under `mcpServers`:
 
 ```json
 {
   "mcpServers": {
     "memory": {
-      "type": "streamable-http",
-      "url": "http://localhost:3101/mcp"
+      "type": "http",
+      "url": "http://localhost:3101/mcp",
+      "headers": {
+        "Authorization": "Bearer memory-mcp-local"
+      }
     }
   }
 }
 ```
 
-Restart Claude Code. You should see the memory tools available — verify by asking Claude: *"What MCP tools do you have?"*
+> **Important:** The `Authorization` header is required. Without it, Claude Code tries OAuth discovery, fails, and shows only an `authenticate` tool instead of the real memory tools. The token value can be anything — the server does not validate it — but the header must be present to bypass the OAuth flow.
+
+Restart Claude Code. Verify by asking Claude: *"What MCP tools do you have?"* — you should see `remember`, `recall`, `forget`, `project_status`, and the pattern tools.
+
+## Troubleshooting
+
+### Claude Code shows `authenticate` instead of real tools
+
+Claude Code's native binary probes OAuth endpoints before connecting to HTTP MCP servers. If no `Authorization` header is provided, it marks the server as "needs authentication" regardless of server response.
+
+**Fix:** Add the `--header "Authorization: Bearer memory-mcp-local"` flag (see [Connect to Claude Code](#4-connect-to-claude-code)).
+
+### Conflicting MCP configs
+
+Claude Code reads MCP configs from multiple files: `~/.claude.json` and `~/.claude/.mcp.json`. If the same server name exists in both, they may conflict.
+
+**Fix:** Keep the memory server in only one config file. Check both:
+```bash
+# See all MCP servers
+claude mcp list
+```
+
+### recall returns empty results
+
+`text-embedding-3-small` produces low cosine similarity (0.05–0.35) for general queries. If `SIMILARITY_THRESHOLD` is above 0.4, most queries return nothing.
+
+**Fix:** Keep `SIMILARITY_THRESHOLD` between `0.2` and `0.3` (default: `0.25`).
+
+### Container works but Claude Code can't connect
+
+Verify the server is running:
+```bash
+curl -s http://localhost:3101/health
+# {"status":"ok"}
+```
+
+If health check passes but Claude Code still can't connect, restart Claude Code (`/exit` and relaunch).
 
 ## Tools
 
@@ -440,10 +488,6 @@ Save reusable knowledge without `project_id`:
 - Before starting non-trivial work: `pattern_search(query=<task description>)`
 - Filter by domain: `pattern_search(query="...", category="devops")`
 ```
-
-## Similarity Threshold
-
-`text-embedding-3-small` produces low cosine similarity scores (typically 0.05–0.35) for general queries against technical content. Setting the threshold above 0.4 will cause most queries to return empty results. The default of `0.25` works well for most use cases. Adjust down to `0.2` if you're getting too few results, or up to `0.3` if you're getting too much noise.
 
 ## Development
 
