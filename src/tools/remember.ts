@@ -6,7 +6,15 @@ import { ValidationError } from '../errors.js';
 const MEMORY_TYPES = [
   'decision', 'bug_fix', 'pattern', 'context',
   'blocker', 'learning', 'convention', 'dependency',
+  'goal', 'deviation', 'counter_argument', 'compliance_check',
 ] as const;
+
+export const RELATIONS = [
+  'counters', 'fulfills', 'deviates_from',
+  'blocks', 'resolves', 'supersedes',
+] as const;
+
+export const STATUSES = ['open', 'resolved', 'waived', 'superseded'] as const;
 
 export const rememberInputSchema = z.object({
   project_id: z
@@ -18,6 +26,9 @@ export const rememberInputSchema = z.object({
   tags: z.array(z.string()).optional().default([]),
   expires_in_days: z.number().positive().optional(),
   session_id: z.string().optional(),
+  linked_to: z.array(z.string().uuid()).optional().default([]),
+  relation: z.enum(RELATIONS).optional(),
+  status: z.enum(STATUSES).optional().default('open'),
 });
 
 export type RememberInput = z.infer<typeof rememberInputSchema>;
@@ -30,7 +41,10 @@ export async function handleRemember(input: RememberInput) {
     );
   }
 
-  const { project_id, memory_type, title, content, tags, expires_in_days, session_id } = parsed.data;
+  const {
+    project_id, memory_type, title, content, tags, expires_in_days, session_id,
+    linked_to, relation, status,
+  } = parsed.data;
 
   const embedding = await generateEmbedding(`${title} ${content}`);
 
@@ -47,6 +61,9 @@ export async function handleRemember(input: RememberInput) {
     embedding,
     session_id: session_id ?? null,
     expires_at: expiresAt,
+    linked_to,
+    relation: relation ?? null,
+    status,
   });
 
   return {
@@ -55,5 +72,8 @@ export async function handleRemember(input: RememberInput) {
     title: row.title,
     memory_type: row.memory_type,
     created_at: row.created_at,
+    linked_to: row.linked_to,
+    relation: row.relation,
+    status: row.status,
   };
 }
