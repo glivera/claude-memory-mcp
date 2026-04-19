@@ -120,5 +120,4 @@ tests/unit/             — 125 tests (mirrors src/ structure, mocks Supabase+Op
 
 - MCP client loses session after container restart — requires Claude Code session restart
 - `.env.example` still references OpenRouter (outdated, actual config uses direct OpenAI)
-- Some unit tests reference `OPENROUTER_API_KEY` (outdated, should be `OPENAI_API_KEY`)
 - dev and memory-mcp services both bind port 3101 — can't run simultaneously
