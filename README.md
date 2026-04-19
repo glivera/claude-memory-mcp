@@ -2,6 +2,8 @@
 
 A persistent vector memory server for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) using the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). Gives Claude long-term memory across sessions — it can remember decisions, bugs, patterns, and context, then recall them semantically in future conversations. Includes a **Skill Patterns** system that tracks reusable work patterns and identifies candidates for automated skill generation.
 
+> **📢 Upcoming v0.2 — Orchestration & Hardening layer.** Adds an optional relationship layer (`linked_to` / `relation` / `status`), four new memory types (`goal`, `deviation`, `counter_argument`, `compliance_check`), and three new tools (`goal_progress`, `link_memories`, `compliance_trend`) for multi-agent orchestration. **Fully additive — no breaking changes, no re-embedding required.** See [`docs/MIGRATION-orchestration.md`](docs/MIGRATION-orchestration.md) if you self-host a fork.
+
 ## How It Works
 
 ```
