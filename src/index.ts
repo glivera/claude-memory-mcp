@@ -8,6 +8,7 @@ import { forgetInputSchemaBase, handleForget } from './tools/forget.js';
 import { projectStatusInputSchema, handleProjectStatus } from './tools/project-status.js';
 import { ValidationError, EmbeddingError, DbError } from './errors.js';
 import { registerPatternTools } from './tools/patterns-index.js';
+import { registerOrchestrationTools } from './tools/orchestration-index.js';
 
 const TRANSPORT = process.env.MCP_TRANSPORT || 'http';
 const PORT = parseInt(process.env.MCP_PORT || '3100', 10);
@@ -85,6 +86,9 @@ function registerTools(server: McpServer): void {
 
   // Skill Pattern tools
   registerPatternTools(server);
+
+  // Orchestration tools (v0.2)
+  registerOrchestrationTools(server);
 }
 
 async function startStdio(): Promise<void> {
