@@ -6,6 +6,7 @@ vi.mock('../../../src/embedding.js', () => ({
 
 vi.mock('../../../src/db.js', () => ({
   matchMemories: vi.fn(),
+  matchMemoriesWithLinks: vi.fn(),
 }));
 
 vi.mock('../../../src/config.js', () => ({
@@ -18,12 +19,13 @@ vi.mock('../../../src/config.js', () => ({
 
 import { handleRecall } from '../../../src/tools/recall.js';
 import { generateEmbedding } from '../../../src/embedding.js';
-import { matchMemories } from '../../../src/db.js';
+import { matchMemories, matchMemoriesWithLinks } from '../../../src/db.js';
 import { getConfig } from '../../../src/config.js';
 import { ValidationError } from '../../../src/errors.js';
 
 const mockGenerateEmbedding = vi.mocked(generateEmbedding);
 const mockMatchMemories = vi.mocked(matchMemories);
+const mockMatchMemoriesWithLinks = vi.mocked(matchMemoriesWithLinks);
 const mockGetConfig = vi.mocked(getConfig);
 
 describe('handleRecall', () => {
@@ -241,6 +243,74 @@ describe('handleRecall', () => {
       project_id: 'my-project',
       memory_type: 'decision',
       created_at: '2026-01-01T00:00:00Z',
+    });
+  });
+
+  describe('v0.2 orchestration features', () => {
+    const extendedResult = {
+      id: 'ext-1',
+      project_id: 'my-project',
+      memory_type: 'decision',
+      title: 'Extended match',
+      content: 'Matched via extended RPC',
+      tags: [],
+      similarity: 0.9,
+      session_id: null,
+      created_at: '2026-01-01T00:00:00Z',
+      status: 'open',
+      linked_to: [],
+      relation: null,
+      link_depth: 0,
+    };
+
+    beforeEach(() => {
+      mockMatchMemoriesWithLinks.mockResolvedValue([extendedResult]);
+    });
+
+    it('should route to matchMemoriesWithLinks when follow_links=true', async () => {
+      await handleRecall({ query: 'test', follow_links: true });
+
+      expect(mockMatchMemoriesWithLinks).toHaveBeenCalled();
+      expect(mockMatchMemories).not.toHaveBeenCalled();
+    });
+
+    it('should use matchMemories when follow_links=false (backward compat)', async () => {
+      await handleRecall({ query: 'test', follow_links: false });
+
+      expect(mockMatchMemories).toHaveBeenCalled();
+      expect(mockMatchMemoriesWithLinks).not.toHaveBeenCalled();
+    });
+
+    it('should trigger extended RPC when status filter is set (no follow_links)', async () => {
+      await handleRecall({ query: 'test', status: 'open' });
+
+      expect(mockMatchMemoriesWithLinks).toHaveBeenCalled();
+      expect(mockMatchMemories).not.toHaveBeenCalled();
+    });
+
+    it('should apply linked_type post-filter: keep depth=0, filter depth=1 by memory_type', async () => {
+      mockMatchMemoriesWithLinks.mockResolvedValue([
+        { ...extendedResult, id: 'direct', memory_type: 'decision', link_depth: 0 },
+        { ...extendedResult, id: 'linked-match', memory_type: 'counter_argument', link_depth: 1 },
+        { ...extendedResult, id: 'linked-skip', memory_type: 'deviation', link_depth: 1 },
+      ]);
+
+      const result = await handleRecall({
+        query: 'test',
+        follow_links: true,
+        linked_type: 'counter_argument',
+      });
+
+      const ids = result.map((r) => r.id);
+      expect(ids).toContain('direct');
+      expect(ids).toContain('linked-match');
+      expect(ids).not.toContain('linked-skip');
+    });
+
+    it('should throw ValidationError for invalid status enum', async () => {
+      await expect(
+        handleRecall({ query: 'test', status: 'bogus' as any })
+      ).rejects.toThrow(ValidationError);
     });
   });
 });

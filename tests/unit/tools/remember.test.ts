@@ -156,4 +156,64 @@ describe('handleRemember', () => {
     const input = { ...validInput, title: 'a'.repeat(120) };
     await expect(handleRemember(input)).resolves.toBeDefined();
   });
+
+  describe('v0.2 orchestration fields', () => {
+    const validTo = '660e8400-e29b-41d4-a716-446655440001';
+
+    it('should pass linked_to + relation + status through to insertMemory', async () => {
+      const input = {
+        ...validInput,
+        linked_to: [validTo],
+        relation: 'counters' as const,
+        status: 'resolved' as const,
+      };
+
+      await handleRemember(input);
+
+      expect(mockInsertMemory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          linked_to: [validTo],
+          relation: 'counters',
+          status: 'resolved',
+        })
+      );
+    });
+
+    it('should return linked_to/relation/status in response when present on row', async () => {
+      mockInsertMemory.mockResolvedValue({
+        ...fakeRow,
+        linked_to: [validTo],
+        relation: 'fulfills',
+        status: 'open',
+      });
+
+      const result = await handleRemember(validInput);
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          linked_to: [validTo],
+          relation: 'fulfills',
+          status: 'open',
+        })
+      );
+    });
+
+    it('should throw ValidationError for invalid linked_to UUID', async () => {
+      const input = { ...validInput, linked_to: ['not-a-uuid'] };
+      await expect(handleRemember(input)).rejects.toThrow(ValidationError);
+    });
+
+    it('should throw ValidationError for invalid relation enum', async () => {
+      const input = { ...validInput, relation: 'bogus' as any };
+      await expect(handleRemember(input)).rejects.toThrow(ValidationError);
+    });
+
+    it('should accept new v0.2 memory types', async () => {
+      const newTypes = ['goal', 'deviation', 'counter_argument', 'compliance_check'];
+      for (const memory_type of newTypes) {
+        const input = { ...validInput, memory_type: memory_type as any };
+        await expect(handleRemember(input)).resolves.toBeDefined();
+      }
+    });
+  });
 });
