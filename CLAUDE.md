@@ -2,6 +2,7 @@
 
 > MCP server providing persistent vector memory for Claude Code.
 > Tools: remember, recall, forget, project_status, pattern_store, pattern_search, pattern_mature, pattern_mark_as_skill.
+> Planned (see `docs/TASK-orchestration-hardening.md`): goal_progress, link_memories, compliance_trend + 4 new memory_types (goal, deviation, counter_argument, compliance_check) + linked_to/relation/status columns. Supports Lv.4 orchestration and Lv.5 hardening agents in Architect.
 
 ## ID: memory-mcp
 
@@ -121,3 +122,16 @@ tests/unit/             — 125 tests (mirrors src/ structure, mocks Supabase+Op
 - MCP client loses session after container restart — requires Claude Code session restart
 - `.env.example` still references OpenRouter (outdated, actual config uses direct OpenAI)
 - dev and memory-mcp services both bind port 3101 — can't run simultaneously
+
+## Planned Features (v0.2)
+
+See `docs/TASK-orchestration-hardening.md` for the implementation spec and `docs/MIGRATION-orchestration.md` for the user-facing migration guide (this repo is open-source — forks need clear upgrade path).
+
+- **New memory_types:** `goal`, `deviation`, `counter_argument`, `compliance_check`
+- **New columns on `all_global_project_memory`:** `linked_to uuid[]`, `relation text`, `status text`
+- **New RPC functions:** `goal_progress_rpc`, `compliance_trend_rpc`, `link_memories_rpc`, `match_memories_with_links_rpc`
+- **New MCP tools:** `goal_progress`, `link_memories`, `compliance_trend`
+- **Extended tools:** `remember` (accepts linked_to/relation/status), `recall` (follow_links/status/linked_type filters)
+- **New migration:** `migrations/003_orchestration_hardening.sql`
+
+Rationale: Supports Architect Lv.4 plan-enforcer / deviation log / goal tracking and Lv.5 devil-advocate / security-auditor / compliance matrix agents. **Fully additive — no breaking changes, no re-embedding, existing tools byte-identical.**
