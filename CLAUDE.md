@@ -1,8 +1,7 @@
 # Project: memory-mcp
 
 > MCP server providing persistent vector memory for Claude Code.
-> Tools: remember, recall, forget, project_status, pattern_store, pattern_search, pattern_mature, pattern_mark_as_skill.
-> Planned (see `docs/TASK-orchestration-hardening.md`): goal_progress, link_memories, compliance_trend + 4 new memory_types (goal, deviation, counter_argument, compliance_check) + linked_to/relation/status columns. Supports Lv.4 orchestration and Lv.5 hardening agents in Architect.
+> Tools: remember, recall, forget, project_status, pattern_store, pattern_search, pattern_mature, pattern_mark_as_skill, goal_progress, link_memories, compliance_trend.
 
 ## ID: memory-mcp
 
@@ -14,7 +13,7 @@
 - **Transport:** Streamable HTTP (Express 5, port 3101)
 - **Database:** Supabase PostgreSQL + pgvector (cloud instance `nlvvhfwagdlfjjhouuae`)
 - **Embeddings:** OpenAI text-embedding-3-small (1536 dims, direct API)
-- **Testing:** Vitest (125 unit tests)
+- **Testing:** Vitest (155 unit tests)
 
 ## Architecture
 
@@ -29,7 +28,10 @@ Claude Code → HTTP POST http://localhost:3101/mcp (Streamable HTTP, JSON-RPC)
           ├── pattern_store   → OpenAI embed → deduplicate → Supabase upsert
           ├── pattern_search  → OpenAI embed → Supabase RPC (skill_patterns)
           ├── pattern_mature  → Supabase RPC (count >= 3, grouped by category)
-          └── pattern_mark_as_skill → Supabase update (skill_created = true)
+          ├── pattern_mark_as_skill → Supabase update (skill_created = true)
+          ├── goal_progress   → Supabase RPC goal_progress_rpc (plan completion stats)
+          ├── link_memories   → Supabase RPC link_memories_rpc (atomic UPDATE RETURNING)
+          └── compliance_trend → Supabase RPC compliance_trend_rpc (filtered by since_days)
 ```
 
 - Each session gets its own McpServer + StreamableHTTPServerTransport instance
@@ -100,7 +102,7 @@ src/
     patterns-index.ts   — barrel: registers all 4 pattern tools
 migrations/
   002_skill_patterns.sql — skill_patterns table, indexes, RPC functions
-tests/unit/             — 125 tests (mirrors src/ structure, mocks Supabase+OpenAI)
+tests/unit/             — 155 tests (mirrors src/ structure, mocks Supabase+OpenAI)
 ```
 
 ## Coding Standards
@@ -123,15 +125,15 @@ tests/unit/             — 125 tests (mirrors src/ structure, mocks Supabase+Op
 - `.env.example` still references OpenRouter (outdated, actual config uses direct OpenAI)
 - dev and memory-mcp services both bind port 3101 — can't run simultaneously
 
-## Planned Features (v0.2)
+## v0.2 — Orchestration & Hardening (released 2026-04-19)
 
-See `docs/TASK-orchestration-hardening.md` for the implementation spec and `docs/MIGRATION-orchestration.md` for the user-facing migration guide (this repo is open-source — forks need clear upgrade path).
+See `docs/DONE/TASK-orchestration-hardening.md` for the implementation spec and `docs/MIGRATION-orchestration.md` for the user-facing migration guide (this repo is open-source — forks need clear upgrade path).
 
-- **New memory_types:** `goal`, `deviation`, `counter_argument`, `compliance_check`
-- **New columns on `all_global_project_memory`:** `linked_to uuid[]`, `relation text`, `status text`
-- **New RPC functions:** `goal_progress_rpc`, `compliance_trend_rpc`, `link_memories_rpc`, `match_memories_with_links_rpc`
-- **New MCP tools:** `goal_progress`, `link_memories`, `compliance_trend`
+- **Added memory_types:** `goal`, `deviation`, `counter_argument`, `compliance_check`
+- **Added columns on `all_global_project_memory`:** `linked_to uuid[]`, `relation text`, `status text`
+- **Added RPC functions:** `goal_progress_rpc`, `compliance_trend_rpc`, `link_memories_rpc`, `match_memories_with_links_rpc`
+- **Added MCP tools:** `goal_progress`, `link_memories`, `compliance_trend`
 - **Extended tools:** `remember` (accepts linked_to/relation/status), `recall` (follow_links/status/linked_type filters)
-- **New migration:** `migrations/003_orchestration_hardening.sql`
+- **Added migration:** `migrations/003_orchestration_hardening.sql`
 
 Rationale: Supports Architect Lv.4 plan-enforcer / deviation log / goal tracking and Lv.5 devil-advocate / security-auditor / compliance matrix agents. **Fully additive — no breaking changes, no re-embedding, existing tools byte-identical.**
