@@ -77,6 +77,9 @@ describe('handleRemember', () => {
       embedding: fakeEmbedding,
       session_id: null,
       expires_at: null,
+      linked_to: [],
+      relation: null,
+      status: 'open',
     });
   });
 
