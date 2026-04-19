@@ -2,24 +2,29 @@
 
 A persistent vector memory server for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) using the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/). Gives Claude long-term memory across sessions — it can remember decisions, bugs, patterns, and context, then recall them semantically in future conversations. Includes a **Skill Patterns** system that tracks reusable work patterns and identifies candidates for automated skill generation.
 
-> **📢 Upcoming v0.2 — Orchestration & Hardening layer.** Adds an optional relationship layer (`linked_to` / `relation` / `status`), four new memory types (`goal`, `deviation`, `counter_argument`, `compliance_check`), and three new tools (`goal_progress`, `link_memories`, `compliance_trend`) for multi-agent orchestration. **Fully additive — no breaking changes, no re-embedding required.** See [`docs/MIGRATION-orchestration.md`](docs/MIGRATION-orchestration.md) if you self-host a fork.
+> **✅ v0.2 Released (2026-04-19) — Orchestration & Hardening layer.** Adds an optional relationship layer (`linked_to` / `relation` / `status`), four new memory types (`goal`, `deviation`, `counter_argument`, `compliance_check`), and three new tools (`goal_progress`, `link_memories`, `compliance_trend`) for multi-agent orchestration. **Fully additive — no breaking changes, no re-embedding required.** If you're on v0.1 and want these features, apply [`migrations/003_orchestration_hardening.sql`](migrations/003_orchestration_hardening.sql) — full upgrade guide in [`docs/MIGRATION-orchestration.md`](docs/MIGRATION-orchestration.md). Existing v0.1 users can skip and continue using the 8-tool surface indefinitely.
 
 ## How It Works
 
 ```
 Claude Code  ──HTTP POST──▸  memory-mcp container (Express + MCP SDK)
                                  │
-                                 │  Memory Tools
+                                 │  Memory Tools (v0.1)
                                  ├── remember        → OpenAI embed → Supabase insert
                                  ├── recall           → OpenAI embed → Supabase vector search
                                  ├── forget           → Supabase soft-delete (expires_at)
                                  ├── project_status  → Supabase stats query
                                  │
-                                 │  Skill Pattern Tools
+                                 │  Skill Pattern Tools (v0.1)
                                  ├── pattern_store          → deduplicate & store work patterns
                                  ├── pattern_search         → semantic search across patterns
                                  ├── pattern_mature         → find patterns ready for skill creation
-                                 └── pattern_mark_as_skill  → mark patterns as converted to SKILL.md
+                                 ├── pattern_mark_as_skill  → mark patterns as converted to SKILL.md
+                                 │
+                                 │  Orchestration Tools (v0.2, optional)
+                                 ├── goal_progress     → plan completion stats for a project
+                                 ├── link_memories     → atomic relation link between memories
+                                 └── compliance_trend  → compliance_check entries over time
 ```
 
 - **Transport:** Streamable HTTP on port 3101 (multiple Claude Code sessions share one server), stdio also supported
@@ -200,6 +205,8 @@ as $$
   order by sp.count desc, sp.last_seen desc;
 $$;
 ```
+
+**(Optional) Apply v0.2 orchestration layer.** If you want `goal`, `deviation`, `counter_argument`, and `compliance_check` memory types plus the three new tools, additionally run the migration file [`migrations/003_orchestration_hardening.sql`](migrations/003_orchestration_hardening.sql) in the Supabase SQL editor. Fully additive — safe to apply anytime, even on a populated database. Skip if you only need v0.1 functionality.
 
 ### 2. Clone and Configure
 
@@ -424,6 +431,55 @@ Mark patterns as converted to SKILL.md files so they no longer appear in `patter
 
 ---
 
+## Orchestration Tools (v0.2, optional)
+
+These three tools become available after applying [`migrations/003_orchestration_hardening.sql`](migrations/003_orchestration_hardening.sql). They enable multi-agent orchestration — plan enforcement, decision stress-testing, and compliance trends — on top of the same unified memory table.
+
+### `goal_progress`
+
+Get plan completion stats for a project. Returns counts of goals (open / in-progress / completed), open deviations, and a completion percentage.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project_id` | string | Yes | kebab-case project identifier |
+| `goal_id` | string (UUID) | No | Filter to a specific goal |
+
+### `link_memories`
+
+Create a semantic relation between one memory and one or more other memories. Atomic (single SQL UPDATE RETURNING — no fetch-merge race).
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `from_id` | string (UUID) | Yes | Memory that gets the link |
+| `to_ids` | string[] (UUIDs) | Yes | Memories being linked to |
+| `relation` | enum | Yes | `counters` \| `fulfills` \| `deviates_from` \| `blocks` \| `resolves` \| `supersedes` |
+
+### `compliance_trend`
+
+Return `compliance_check` memory entries for a project within the last N days, most recent first. Useful for surfacing repeated security findings, audit drift, or compliance rot over time.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project_id` | string | Yes | kebab-case project identifier |
+| `since_days` | number (1-365) | No | Lookback window (default 30) |
+
+### New `memory_type` values (v0.2)
+
+The `remember` tool now accepts four additional types:
+- **`goal`** — a planned outcome; use `status` to track progress (`open` → `resolved`)
+- **`deviation`** — plan drift detected by an enforcer agent; typically linked via `relation=deviates_from`
+- **`counter_argument`** — adversarial pushback against a decision; linked via `relation=counters`
+- **`compliance_check`** — individual security/compliance audit result; queryable via `compliance_trend`
+
+### Extended fields on `remember` / `recall` (v0.2)
+
+- `remember` additionally accepts: `linked_to` (UUID[]), `relation` (enum), `status` (`open` | `resolved` | `waived` | `superseded`, default `open`)
+- `recall` additionally accepts: `status` (filter), `follow_links` (bool), `linked_type` (string, filter linked memories by their type)
+
+Existing callers on v0.1 signatures continue to work unchanged — all new fields default to safe values.
+
+---
+
 ## Teaching Claude to Use Memory
 
 Add instructions to `~/.claude/CLAUDE.md` (global) or your project's `CLAUDE.md` to tell Claude when and how to use memory. Here's a recommended configuration:
@@ -431,9 +487,10 @@ Add instructions to `~/.claude/CLAUDE.md` (global) or your project's `CLAUDE.md`
 ```markdown
 ## Memory System
 
-You have a persistent memory MCP server with 8 tools:
-- **Memory:** `remember`, `recall`, `forget`, `project_status`
-- **Skill Patterns:** `pattern_store`, `pattern_search`, `pattern_mature`, `pattern_mark_as_skill`
+You have a persistent memory MCP server with up to 11 tools:
+- **Memory (v0.1):** `remember`, `recall`, `forget`, `project_status`
+- **Skill Patterns (v0.1):** `pattern_store`, `pattern_search`, `pattern_mature`, `pattern_mark_as_skill`
+- **Orchestration (v0.2, if migration 003 applied):** `goal_progress`, `link_memories`, `compliance_trend`
 
 ### Determining project_id
 
