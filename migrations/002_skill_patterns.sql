@@ -18,7 +18,7 @@ create table if not exists skill_patterns (
   last_seen timestamptz not null default now(),
   proposed_skill boolean not null default false,
   skill_created boolean not null default false,
-  embedding vector(1536) not null,
+  embedding vector(1024) not null,
   constraint skill_patterns_count_positive check (count > 0)
 );
 
@@ -39,7 +39,7 @@ create index if not exists skill_patterns_project_idx
 
 -- Batch 3: RPC functions
 create or replace function match_skill_patterns(
-  query_embedding vector(1536),
+  query_embedding vector(1024),
   match_threshold float default 0.9,
   match_count int default 1,
   filter_category text default null,

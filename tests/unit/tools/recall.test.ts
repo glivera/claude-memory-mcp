@@ -66,8 +66,8 @@ describe('handleRecall', () => {
       DEFAULT_RECALL_LIMIT: 5,
       SUPABASE_URL: 'https://test.supabase.co',
       SUPABASE_SERVICE_KEY: 'key',
-      OPENAI_API_KEY: 'key',
-      EMBEDDING_MODEL: 'openai/text-embedding-3-small',
+      OLLAMA_URL: 'http://127.0.0.1:11434',
+      EMBEDDING_MODEL: 'qwen3-embedding-0.6b',
     });
   });
 

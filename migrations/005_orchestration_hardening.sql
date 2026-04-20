@@ -189,7 +189,7 @@ $$;
 
 -- --- §4d: match_memories_with_links_rpc --------------------------------------
 create or replace function match_memories_with_links_rpc(
-  query_embedding vector(1536),
+  query_embedding vector(1024),
   filter_project text default null,
   filter_type text default null,
   filter_status text default null,

@@ -1,31 +1,34 @@
-import OpenAI from 'openai';
 import { getConfig } from './config.js';
 import { EmbeddingError } from './errors.js';
 
-let openaiClient: OpenAI | null = null;
-
-function getOpenAIClient(): OpenAI {
-  if (openaiClient) return openaiClient;
-
-  const config = getConfig();
-  openaiClient = new OpenAI({
-    apiKey: config.OPENAI_API_KEY,
-  });
-  return openaiClient;
+interface OllamaEmbedResponse {
+  embedding: number[];
 }
 
 export async function generateEmbedding(text: string): Promise<number[]> {
-  const client = getOpenAIClient();
+  const config = getConfig();
 
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const response = await client.embeddings.create({
-        model: getConfig().EMBEDDING_MODEL,
-        input: text,
-        encoding_format: 'float',
+      const response = await fetch(`${config.OLLAMA_URL}/api/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: config.EMBEDDING_MODEL,
+          prompt: text,
+        }),
       });
-      return response.data[0].embedding;
+
+      if (!response.ok) {
+        const body = await response.text();
+        const err = { status: response.status, message: body };
+        if (attempt === 0 && isRetryable(err)) continue;
+        throw err;
+      }
+
+      const data = (await response.json()) as OllamaEmbedResponse;
+      return data.embedding;
     } catch (err) {
       lastError = err;
       if (attempt === 0 && isRetryable(err)) {
@@ -42,12 +45,9 @@ export async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 function isRetryable(err: unknown): boolean {
-  if (err instanceof OpenAI.APIError) {
-    return [429, 500, 502, 503].includes(err.status);
+  if (err && typeof err === 'object' && 'status' in err) {
+    const status = (err as { status: number }).status;
+    return [429, 500, 502, 503].includes(status);
   }
   return false;
-}
-
-export function resetOpenAIClient(): void {
-  openaiClient = null;
 }
