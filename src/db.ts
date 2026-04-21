@@ -210,11 +210,20 @@ export async function updateStatus(
 
 export async function expireMemoryById(memoryId: string): Promise<number> {
   const db = getSupabaseClient();
+  // Idempotent: re-expiring an already-expired row is a no-op from the
+  // recall perspective (it's already filtered out) but will refresh
+  // expires_at. We omit the or() guard on expires_at here for two reasons:
+  //   1. PostgREST rejects `or(expires_at...)` + `select('id')` + UPDATE
+  //      with error 42703 "column expires_at does not exist" because the
+  //      RETURNING projection doesn't include expires_at.
+  //   2. After SET expires_at=now(), the RETURNING row has
+  //      expires_at=now() (not > now()), so PostgREST re-applying the
+  //      filter on the returned row yields empty data → count=0 even
+  //      though the UPDATE succeeded. Semantically wrong.
   const { data, error } = await db
     .from(TABLE)
     .update({ expires_at: new Date().toISOString() })
     .eq('id', memoryId)
-    .or('expires_at.is.null,expires_at.gt.now()')
     .select('id');
 
   if (error) throw new DbError(`Expire by ID failed: ${error.message}`, { cause: error });
@@ -226,11 +235,14 @@ export async function expireMemoriesByProject(
   olderThanDays?: number
 ): Promise<number> {
   const db = getSupabaseClient();
+  // Same PostgREST quirk as expireMemoryById — or() guard on expires_at
+  // combined with UPDATE + select yields both 42703 errors and wrong
+  // counts. Idempotent: already-expired rows will have expires_at
+  // refreshed, which is acceptable for project-wide cleanup.
   let query = db
     .from(TABLE)
     .update({ expires_at: new Date().toISOString() })
-    .eq('project_id', projectId)
-    .or('expires_at.is.null,expires_at.gt.now()');
+    .eq('project_id', projectId);
 
   if (olderThanDays !== undefined) {
     const cutoff = new Date();
