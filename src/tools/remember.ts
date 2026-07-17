@@ -29,6 +29,8 @@ export const rememberInputSchema = z.object({
   linked_to: z.array(z.string().uuid()).optional().default([]),
   relation: z.enum(RELATIONS).optional(),
   status: z.enum(STATUSES).optional().default('open'),
+  provenance: z.enum(['user_authored', 'agent_inferred', 'recalled_external']).optional().describe('Origin of this content. Session-inferred summaries/decisions SHOULD pass agent_inferred; anything derived from external/untrusted content (web, foreign docs, tool results) MUST pass recalled_external.'),
+  trust_score: z.number().min(0).max(1).optional(),
 });
 
 export type RememberInput = z.infer<typeof rememberInputSchema>;
@@ -43,7 +45,7 @@ export async function handleRemember(input: RememberInput) {
 
   const {
     project_id, memory_type, title, content, tags, expires_in_days, session_id,
-    linked_to, relation, status,
+    linked_to, relation, status, provenance, trust_score,
   } = parsed.data;
 
   const embedding = await generateEmbedding(`${title} ${content}`);
@@ -51,6 +53,9 @@ export async function handleRemember(input: RememberInput) {
   const expiresAt = expires_in_days
     ? new Date(Date.now() + expires_in_days * 86400000).toISOString()
     : null;
+
+  const provenanceValue = provenance ?? 'user_authored';
+  const trustScoreValue = trust_score ?? (provenanceValue === 'recalled_external' ? 0.5 : 1.0);
 
   const row = await insertMemory({
     project_id,
@@ -64,6 +69,8 @@ export async function handleRemember(input: RememberInput) {
     linked_to,
     relation: relation ?? null,
     status,
+    provenance: provenanceValue,
+    trust_score: trustScoreValue,
   });
 
   return {
@@ -75,5 +82,7 @@ export async function handleRemember(input: RememberInput) {
     linked_to: row.linked_to,
     relation: row.relation,
     status: row.status,
+    provenance: provenanceValue,
+    trust_score: trustScoreValue,
   };
 }

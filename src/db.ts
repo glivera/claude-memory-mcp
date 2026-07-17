@@ -26,6 +26,8 @@ export interface MemoryRow {
   linked_to?: string[];
   relation?: string | null;
   status?: string;
+  provenance?: string;
+  trust_score?: number;
 }
 
 export interface MatchResult {
@@ -42,6 +44,9 @@ export interface MatchResult {
   linked_to?: string[];
   relation?: string | null;
   link_depth?: number;
+  provenance?: string | null;
+  trust_score?: number | null;
+  rrf_score?: number;
 }
 
 export interface MemoryStats {
@@ -79,7 +84,10 @@ export interface LinkMemoriesResult {
 const TABLE = 'all_global_project_memory';
 
 export async function insertMemory(
-  row: Omit<MemoryRow, 'id' | 'created_at'>
+  row: Omit<MemoryRow, 'id' | 'created_at' | 'provenance' | 'trust_score'> & {
+    provenance: string;
+    trust_score: number;
+  }
 ): Promise<MemoryRow> {
   const db = getSupabaseClient();
   const { data, error } = await db
@@ -114,6 +122,30 @@ export async function matchMemories(
   const { data, error } = await db.rpc('all_global_match_memories', params);
 
   if (error) throw new DbError(`Match query failed: ${error.message}`, { cause: error });
+  return (data ?? []) as MatchResult[];
+}
+
+export async function matchMemoriesHybrid(
+  queryEmbedding: number[],
+  queryText: string,
+  filterProject: string | null,
+  filterType: string | null,
+  matchCount: number,
+  threshold: number,
+  minCreatedAt: string | null
+): Promise<MatchResult[]> {
+  const db = getSupabaseClient();
+  const { data, error } = await db.rpc('all_global_match_memories_hybrid', {
+    query_embedding: queryEmbedding,
+    query_text: queryText,
+    filter_project: filterProject,
+    filter_type: filterType,
+    match_count: matchCount,
+    threshold,
+    min_created_at: minCreatedAt,
+  });
+
+  if (error) throw new DbError(`all_global_match_memories_hybrid failed: ${error.message}`, { cause: error });
   return (data ?? []) as MatchResult[];
 }
 

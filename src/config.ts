@@ -8,6 +8,8 @@ const configSchema = z.object({
   SIMILARITY_THRESHOLD: z.coerce.number().min(0).max(1).default(0.7),
   RECALL_TOKEN_CAP: z.coerce.number().positive().default(2000),
   DEFAULT_RECALL_LIMIT: z.coerce.number().positive().max(20).default(5),
+  RECALL_HYBRID: z.enum(['0', '1']).default('0'),
+  RECALL_ENVELOPE: z.enum(['0', '1']).default('0'),
 });
 
 export type Config = z.infer<typeof configSchema>;

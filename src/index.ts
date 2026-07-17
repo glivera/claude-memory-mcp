@@ -3,7 +3,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { rememberInputSchema, handleRemember } from './tools/remember.js';
-import { recallInputSchema, handleRecall } from './tools/recall.js';
+import { recallInputSchema, handleRecall, wrapRecallResult } from './tools/recall.js';
+import { getConfig } from './config.js';
 import { forgetInputSchemaBase, handleForget } from './tools/forget.js';
 import { projectStatusInputSchema, handleProjectStatus } from './tools/project-status.js';
 import { ValidationError, EmbeddingError, DbError } from './errors.js';
@@ -49,7 +50,7 @@ function registerTools(server: McpServer): void {
     async (input) => {
       try {
         const results = await handleRecall(input);
-        return { content: [{ type: 'text' as const, text: JSON.stringify(results, null, 2) }] };
+        return { content: [{ type: 'text' as const, text: wrapRecallResult(results, getConfig().RECALL_ENVELOPE === '1') }] };
       } catch (err) {
         return formatError(err);
       }
