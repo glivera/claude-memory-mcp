@@ -137,3 +137,18 @@ See `docs/DONE/TASK-orchestration-hardening.md` for the implementation spec and 
 - **Added migration:** `migrations/003_orchestration_hardening.sql`
 
 Rationale: Supports Architect Lv.4 plan-enforcer / deviation log / goal tracking and Lv.5 devil-advocate / security-auditor / compliance matrix agents. **Fully additive — no breaking changes, no re-embedding, existing tools byte-identical.**
+
+## Development Pipeline
+
+Agents below are invoked by Opus before and after @code-writer.
+Use them as standalone tools (toolkit mode) or via /build-module (full pipeline).
+
+| Task | Agent/Command | When |
+|------|--------------|------|
+| Implement from spec | @code-writer | Receives validated spec, runs type-check before reporting |
+| Verify implementation | @qa-verifier | AFTER code-writer -- type-check -> unit -> integration -> smoke, stops at first fail |
+| Pre-push audit | /cross-verify | Parallel: logic-auditor + security-auditor + qa-verifier. Add --with-da for decisions |
+
+### Pipeline rules
+- @qa-verifier after every non-trivial implementation. Fix failures before proceeding.
+
