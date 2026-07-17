@@ -47,8 +47,8 @@ docker compose up -d memory-mcp
 # Dev mode (with hot reload via tsx)
 docker compose up dev
 
-# Tests
-docker compose run --rm test
+# Tests (--run = run-once; bare `vitest` entrypoint would hang in watch mode)
+docker compose run --rm test --run
 
 # Rebuild after code changes
 docker compose up -d --build memory-mcp

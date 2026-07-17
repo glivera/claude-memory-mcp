@@ -20,6 +20,8 @@ describe('config', () => {
     delete process.env.SIMILARITY_THRESHOLD;
     delete process.env.RECALL_TOKEN_CAP;
     delete process.env.DEFAULT_RECALL_LIMIT;
+    delete process.env.RECALL_HYBRID;
+    delete process.env.RECALL_ENVELOPE;
   });
 
   afterEach(() => {
@@ -43,6 +45,8 @@ describe('config', () => {
     expect(config.SIMILARITY_THRESHOLD).toBe(0.7);
     expect(config.RECALL_TOKEN_CAP).toBe(2000);
     expect(config.DEFAULT_RECALL_LIMIT).toBe(5);
+    expect(config.RECALL_HYBRID).toBe('0');
+    expect(config.RECALL_ENVELOPE).toBe('0');
   });
 
   it('should allow overriding optional vars', () => {
@@ -117,5 +121,26 @@ describe('config', () => {
     process.env.SUPABASE_URL = 'https://changed.supabase.co';
     const second = getConfig();
     expect(second.SUPABASE_URL).toBe('https://changed.supabase.co');
+  });
+
+  describe('RECALL_HYBRID (v0.3)', () => {
+    it('should default to "0" when not set', () => {
+      setRequiredEnv();
+      const config = getConfig();
+      expect(config.RECALL_HYBRID).toBe('0');
+    });
+
+    it('should accept "1"', () => {
+      setRequiredEnv();
+      process.env.RECALL_HYBRID = '1';
+      const config = getConfig();
+      expect(config.RECALL_HYBRID).toBe('1');
+    });
+
+    it('should reject non-enum values like "true"', () => {
+      setRequiredEnv();
+      process.env.RECALL_HYBRID = 'true';
+      expect(() => getConfig()).toThrow('Invalid configuration');
+    });
   });
 });

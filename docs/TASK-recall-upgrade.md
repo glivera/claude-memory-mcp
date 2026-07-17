@@ -73,3 +73,22 @@ logic-auditor + devil-advocate → founder approval → implement.**
 Entity extraction leg; R9 bi-temporal columns; R3 hnsw.iterative_scan (bundle
 opportunistically ONLY if already touching the recall RPC and it is genuinely
 one line); any re-ranking model; any new service.
+
+---
+
+## OUTCOME (2026-07-18)
+
+Executed with full planning gate (plan rev.2 absorbed 1 BLOCKER + 6 HIGH from
+logic-auditor + devil-advocate; key design changes vs this spec: functional GIN
+expression index instead of stored generated column (zero rewrite), 'simple'
+config instead of 'english' (mixed RU/EN), nullable provenance columns instead
+of backfilled defaults (NULL = honest pre-004 unknown), envelope behind its own
+RECALL_ENVELOPE flag, float-literal RRF (integer division would zero all scores).
+
+- Scope B (provenance + envelope): LIVE. RECALL_ENVELOPE=1 in prod.
+- Scope A (hybrid): SHIPPED flag-gated; held-out eval (16 queries, 11 EN/5 RU,
+  transcript-mined + paraphrases) FAILED the flip rule: cosine 0.75 vs hybrid
+  0.73 aggregate, RU slice 0.73 vs 0.67, one regression (q08). RECALL_HYBRID
+  stays '0'. Honest negative result -- the falsify-first gate worked as designed.
+- Revisit: down-weight FTS leg in RRF or exact-identifier fallback; re-run
+  bin/recall-eval.ts after tuning. See memory c0e160d5 (memory-mcp).

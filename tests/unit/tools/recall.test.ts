@@ -7,6 +7,7 @@ vi.mock('../../../src/embedding.js', () => ({
 vi.mock('../../../src/db.js', () => ({
   matchMemories: vi.fn(),
   matchMemoriesWithLinks: vi.fn(),
+  matchMemoriesHybrid: vi.fn(),
 }));
 
 vi.mock('../../../src/config.js', () => ({
@@ -14,18 +15,21 @@ vi.mock('../../../src/config.js', () => ({
     SIMILARITY_THRESHOLD: 0.7,
     RECALL_TOKEN_CAP: 2000,
     DEFAULT_RECALL_LIMIT: 5,
+    RECALL_HYBRID: '0',
+    RECALL_ENVELOPE: '0',
   }),
 }));
 
-import { handleRecall } from '../../../src/tools/recall.js';
+import { handleRecall, wrapRecallResult, RECALL_NOTICE } from '../../../src/tools/recall.js';
 import { generateEmbedding } from '../../../src/embedding.js';
-import { matchMemories, matchMemoriesWithLinks } from '../../../src/db.js';
+import { matchMemories, matchMemoriesWithLinks, matchMemoriesHybrid } from '../../../src/db.js';
 import { getConfig } from '../../../src/config.js';
 import { ValidationError } from '../../../src/errors.js';
 
 const mockGenerateEmbedding = vi.mocked(generateEmbedding);
 const mockMatchMemories = vi.mocked(matchMemories);
 const mockMatchMemoriesWithLinks = vi.mocked(matchMemoriesWithLinks);
+const mockMatchMemoriesHybrid = vi.mocked(matchMemoriesHybrid);
 const mockGetConfig = vi.mocked(getConfig);
 
 describe('handleRecall', () => {
@@ -60,15 +64,18 @@ describe('handleRecall', () => {
     vi.clearAllMocks();
     mockGenerateEmbedding.mockResolvedValue(fakeEmbedding);
     mockMatchMemories.mockResolvedValue(fakeResults);
+    mockMatchMemoriesHybrid.mockResolvedValue(fakeResults);
     mockGetConfig.mockReturnValue({
       SIMILARITY_THRESHOLD: 0.7,
       RECALL_TOKEN_CAP: 2000,
       DEFAULT_RECALL_LIMIT: 5,
+      RECALL_HYBRID: '0',
+      RECALL_ENVELOPE: '0',
       SUPABASE_URL: 'https://test.supabase.co',
       SUPABASE_SERVICE_KEY: 'key',
       OPENAI_API_KEY: 'key',
       EMBEDDING_MODEL: 'openai/text-embedding-3-small',
-    });
+    } as any);
   });
 
   it('should return matching memories', async () => {
@@ -312,5 +319,122 @@ describe('handleRecall', () => {
         handleRecall({ query: 'test', status: 'bogus' as any })
       ).rejects.toThrow(ValidationError);
     });
+  });
+
+  describe('v0.3 hybrid recall routing', () => {
+    it('should use matchMemories (not matchMemoriesHybrid) when RECALL_HYBRID is not set (default)', async () => {
+      await handleRecall({ query: 'test' });
+
+      expect(mockMatchMemories).toHaveBeenCalled();
+      expect(mockMatchMemoriesHybrid).not.toHaveBeenCalled();
+    });
+
+    it('should route to matchMemoriesHybrid with the query text as second arg when RECALL_HYBRID=1', async () => {
+      mockGetConfig.mockReturnValue({
+        SIMILARITY_THRESHOLD: 0.7,
+        RECALL_TOKEN_CAP: 2000,
+        DEFAULT_RECALL_LIMIT: 5,
+        RECALL_HYBRID: '1',
+        RECALL_ENVELOPE: '0',
+      } as any);
+
+      await handleRecall({ query: 'database choice' });
+
+      expect(mockMatchMemoriesHybrid).toHaveBeenCalled();
+      expect(mockMatchMemories).not.toHaveBeenCalled();
+      expect(mockMatchMemoriesHybrid.mock.calls[0][1]).toBe('database choice');
+    });
+
+    it('should always use matchMemoriesWithLinks for the extended path (follow_links=true), regardless of RECALL_HYBRID', async () => {
+      mockGetConfig.mockReturnValue({
+        SIMILARITY_THRESHOLD: 0.7,
+        RECALL_TOKEN_CAP: 2000,
+        DEFAULT_RECALL_LIMIT: 5,
+        RECALL_HYBRID: '1',
+        RECALL_ENVELOPE: '0',
+      } as any);
+      mockMatchMemoriesWithLinks.mockResolvedValue(
+        fakeResults.map((r) => ({ ...r, status: 'open', linked_to: [], relation: null, link_depth: 0 }))
+      );
+
+      await handleRecall({ query: 'test', follow_links: true });
+
+      expect(mockMatchMemoriesWithLinks).toHaveBeenCalled();
+      expect(mockMatchMemoriesHybrid).not.toHaveBeenCalled();
+      expect(mockMatchMemories).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('v0.3 provenance and trust_score fields on entries', () => {
+    it('should include provenance and trust_score in entries when the mocked result rows carry them', async () => {
+      mockMatchMemories.mockResolvedValue([
+        { ...fakeResults[0], provenance: 'user_authored', trust_score: 1.0 },
+      ]);
+
+      const result = await handleRecall({ query: 'test' });
+
+      expect(result[0]).toEqual(
+        expect.objectContaining({ provenance: 'user_authored', trust_score: 1.0 })
+      );
+    });
+
+    it('should omit provenance and trust_score keys when result rows have them null/undefined', async () => {
+      mockMatchMemories.mockResolvedValue([
+        { ...fakeResults[0], provenance: null, trust_score: null },
+      ]);
+
+      const result = await handleRecall({ query: 'test' });
+
+      expect(result[0]).not.toHaveProperty('provenance');
+      expect(result[0]).not.toHaveProperty('trust_score');
+    });
+  });
+});
+
+describe('wrapRecallResult', () => {
+  const sampleEntries = [
+    {
+      id: 'id-1',
+      title: 'Use PostgreSQL',
+      content: 'Database decision details.',
+      tags: ['db'],
+      similarity: 0.95,
+      project_id: 'my-project',
+      memory_type: 'decision',
+      created_at: '2026-01-01T00:00:00Z',
+    },
+  ];
+
+  it('should return a plain JSON array string when envelopeEnabled is false', () => {
+    const output = wrapRecallResult(sampleEntries as any, false);
+    const parsed = JSON.parse(output);
+
+    expect(Array.isArray(parsed)).toBe(true);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].id).toBe('id-1');
+  });
+
+  it('should return a notice-wrapped JSON object when envelopeEnabled is true', () => {
+    const output = wrapRecallResult(sampleEntries as any, true);
+    const parsed = JSON.parse(output);
+
+    expect(Array.isArray(parsed)).toBe(false);
+    expect(parsed.notice).toBe(RECALL_NOTICE);
+    expect(Array.isArray(parsed.memories)).toBe(true);
+    expect(parsed.memories).toHaveLength(1);
+    expect(parsed.memories[0].id).toBe('id-1');
+  });
+
+  it('should handle an empty entries array in plain mode (envelopeEnabled=false)', () => {
+    const output = wrapRecallResult([], false);
+    expect(JSON.parse(output)).toEqual([]);
+  });
+
+  it('should handle an empty entries array in envelope mode (envelopeEnabled=true)', () => {
+    const output = wrapRecallResult([], true);
+    const parsed = JSON.parse(output);
+
+    expect(parsed.notice).toBe(RECALL_NOTICE);
+    expect(parsed.memories).toEqual([]);
   });
 });

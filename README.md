@@ -554,8 +554,8 @@ Save reusable knowledge without `project_id`:
 # Dev mode with hot reload
 docker compose up dev
 
-# Run tests
-docker compose run --rm test
+# Run tests (--run = run-once, non-watch)
+docker compose run --rm test --run
 
 # Rebuild production image after changes
 docker compose up -d --build memory-mcp

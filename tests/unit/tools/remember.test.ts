@@ -48,13 +48,15 @@ describe('handleRemember', () => {
   it('should successfully remember a valid memory', async () => {
     const result = await handleRemember(validInput);
 
-    expect(result).toEqual({
-      id: 'uuid-123',
-      project_id: 'my-project',
-      title: 'Use PostgreSQL',
-      memory_type: 'decision',
-      created_at: '2026-01-01T00:00:00Z',
-    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        id: 'uuid-123',
+        project_id: 'my-project',
+        title: 'Use PostgreSQL',
+        memory_type: 'decision',
+        created_at: '2026-01-01T00:00:00Z',
+      })
+    );
   });
 
   it('should generate embedding from title + content', async () => {
@@ -80,6 +82,8 @@ describe('handleRemember', () => {
       linked_to: [],
       relation: null,
       status: 'open',
+      provenance: 'user_authored',
+      trust_score: 1.0,
     });
   });
 
@@ -214,6 +218,69 @@ describe('handleRemember', () => {
         const input = { ...validInput, memory_type: memory_type as any };
         await expect(handleRemember(input)).resolves.toBeDefined();
       }
+    });
+  });
+
+  describe('v0.3 provenance and trust_score', () => {
+    it('should default provenance to user_authored and trust_score to 1.0 when neither is provided', async () => {
+      mockInsertMemory.mockResolvedValue({
+        ...fakeRow,
+        provenance: 'user_authored',
+        trust_score: 1.0,
+      });
+
+      const result = await handleRemember(validInput);
+
+      expect(mockInsertMemory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provenance: 'user_authored',
+          trust_score: 1.0,
+        })
+      );
+      expect(result).toEqual(
+        expect.objectContaining({
+          provenance: 'user_authored',
+          trust_score: 1.0,
+        })
+      );
+    });
+
+    it('should default trust_score to 0.5 when provenance is recalled_external and trust_score is omitted', async () => {
+      const input = { ...validInput, provenance: 'recalled_external' as const };
+      await handleRemember(input);
+
+      expect(mockInsertMemory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provenance: 'recalled_external',
+          trust_score: 0.5,
+        })
+      );
+    });
+
+    it('should respect an explicit trust_score alongside provenance=recalled_external', async () => {
+      const input = {
+        ...validInput,
+        provenance: 'recalled_external' as const,
+        trust_score: 0.9,
+      };
+      await handleRemember(input);
+
+      expect(mockInsertMemory).toHaveBeenCalledWith(
+        expect.objectContaining({
+          provenance: 'recalled_external',
+          trust_score: 0.9,
+        })
+      );
+    });
+
+    it('should throw ValidationError for an invalid provenance value', async () => {
+      const input = { ...validInput, provenance: 'bogus' as any };
+      await expect(handleRemember(input)).rejects.toThrow(ValidationError);
+    });
+
+    it('should throw ValidationError for trust_score above 1', async () => {
+      const input = { ...validInput, trust_score: 1.5 };
+      await expect(handleRemember(input)).rejects.toThrow(ValidationError);
     });
   });
 });
