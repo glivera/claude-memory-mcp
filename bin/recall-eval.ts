@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { generateEmbedding } from '../src/embedding.js';
@@ -38,7 +38,15 @@ function recallAt10(returnedIds: string[], expected: string[]): number {
 
 function loadQueries(): QueryCase[] {
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
-  const queriesPath = path.join(scriptDir, '../tests/eval/queries.json');
+  // queries.local.json is gitignored: real eval sets reference private
+  // memory content and must never reach the public repo. The committed
+  // queries.example.json only documents the format.
+  const localPath = path.join(scriptDir, '../tests/eval/queries.local.json');
+  const examplePath = path.join(scriptDir, '../tests/eval/queries.example.json');
+  const queriesPath = existsSync(localPath) ? localPath : examplePath;
+  if (queriesPath === examplePath) {
+    console.error('[recall-eval] tests/eval/queries.local.json not found -- running on the example set (format demo only)');
+  }
   const raw = readFileSync(queriesPath, 'utf-8');
   const parsed = JSON.parse(raw) as QueriesFile;
   return parsed.queries;

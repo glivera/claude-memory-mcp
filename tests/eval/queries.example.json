@@ -1,0 +1,8 @@
+{
+  "description": "FORMAT EXAMPLE for the recall eval set. Copy to queries.local.json (gitignored) and fill with your own held-out queries. Guidance: mine 'mined' queries from real session transcripts (natural phrasing -- avoid authoring queries from the target memory's own keywords, that rigs the FTS leg to win by construction); add 'paraphrase' queries that share meaning but not literal tokens with the target; include every language your corpus contains. Label expected IDs from ground-truth knowledge (metadata/title browsing), not query-token search. Metric: recall@10 = |found in top10 / expected| / |expected|, macro-averaged, with per-language and per-source slices.",
+  "queries": [
+    { "id": "q01", "lang": "en", "source": "mined", "query": "docker container port already allocated after restart", "expected": ["00000000-0000-0000-0000-000000000001"] },
+    { "id": "q02", "lang": "en", "source": "paraphrase", "query": "background job finished without writing anything and no error was logged", "expected": ["00000000-0000-0000-0000-000000000002", "00000000-0000-0000-0000-000000000003"] },
+    { "id": "q03", "lang": "ru", "source": "paraphrase", "query": "как откатить неудачную миграцию базы без потери данных", "expected": ["00000000-0000-0000-0000-000000000004"] }
+  ]
+}
