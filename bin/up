@@ -1,0 +1,73 @@
+#!/bin/bash
+set -euo pipefail
+
+REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$REPO_ROOT"
+
+DRY_RUN=false
+if [ "${1:-}" = "--dry-run" ]; then
+  DRY_RUN=true
+  shift
+fi
+
+# File-less by design: no .env is ever written to disk. Secrets are
+# injected straight into the docker compose process env by `doppler run`
+# below; docker-compose.yml passes them through via bare-name entries in
+# each service's `environment:` block. This script's WHITELIST exists
+# only as a preflight check, the compose file is the actual enforcement.
+#
+# Never widen this list to "everything in the memory-mcp Doppler project".
+# Names must match what src/config.ts reads; adding a variable is a
+# deliberate edit here, never a widening of the check.
+WHITELIST=(
+  SUPABASE_URL
+  SUPABASE_SERVICE_KEY
+  OPENAI_API_KEY
+  EMBEDDING_MODEL
+  SIMILARITY_THRESHOLD
+  RECALL_TOKEN_CAP
+  DEFAULT_RECALL_LIMIT
+)
+# RECALL_HYBRID and RECALL_ENVELOPE are intentionally absent from this
+# list: their code defaults ('0' and '1' as of v0.4.0) are safe. To
+# override either, set it in the Doppler memory-mcp project AND add its
+# name here and to docker-compose.yml.
+
+TMP_NAMES=$(mktemp)
+trap 'rm -f "$TMP_NAMES"' EXIT
+
+doppler secrets --project memory-mcp --config dev --only-names --json > "$TMP_NAMES"
+
+missing=()
+for name in "${WHITELIST[@]}"; do
+  if ! jq -e --arg k "$name" 'has($k)' "$TMP_NAMES" > /dev/null; then
+    missing+=("$name")
+  fi
+done
+
+if [ "${#missing[@]}" -gt 0 ]; then
+  echo "bin/up: missing in Doppler (project memory-mcp, config dev):" >&2
+  for name in "${missing[@]}"; do
+    echo "  - ${name}" >&2
+  done
+  exit 1
+fi
+
+if [ "$DRY_RUN" = true ]; then
+  echo "bin/up --dry-run: all ${#WHITELIST[@]} whitelisted vars present in Doppler"
+  echo "bin/up --dry-run: names that would be injected via doppler run (values never shown):"
+  for name in "${WHITELIST[@]}"; do
+    echo "  - ${name}"
+  done
+  echo ""
+  echo "bin/up --dry-run: stopping before docker compose"
+  exit 0
+fi
+
+echo "bin/up: injecting ${#WHITELIST[@]} whitelisted vars via doppler run"
+
+# Default to the main service only; dev/test are started explicitly (bin/up dev, bin/up test)
+if [ "$#" -eq 0 ]; then
+  set -- memory-mcp
+fi
+exec doppler run --project memory-mcp --config dev -- docker compose up -d "$@"

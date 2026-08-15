@@ -6,11 +6,22 @@ services:
       tags:
         - "memory-mcp:latest"
     image: memory-mcp:latest
-    env_file: .env
     ports:
       - "3101:3101"
+    # Whitelist pass-through, injected by bin/up via doppler run. Names
+    # must match src/config.ts; adding a variable is a deliberate edit
+    # here, never a widening of what gets passed through.
+    # RECALL_HYBRID and RECALL_ENVELOPE are intentionally absent: their
+    # code defaults ('0' and '1' as of v0.4.0) are safe.
     environment:
       - MCP_PORT=3101
+      - SUPABASE_URL
+      - SUPABASE_SERVICE_KEY
+      - OPENAI_API_KEY
+      - EMBEDDING_MODEL
+      - SIMILARITY_THRESHOLD
+      - RECALL_TOKEN_CAP
+      - DEFAULT_RECALL_LIMIT
     restart: unless-stopped
     logging:
       driver: json-file
@@ -25,11 +36,22 @@ services:
     volumes:
       - .:/app
       - memory_mcp_node_modules:/app/node_modules
-    env_file: .env
-    environment:
-      - MCP_PORT=3101
     ports:
       - "3101:3101"
+    # Whitelist pass-through, injected by bin/up via doppler run. Names
+    # must match src/config.ts; adding a variable is a deliberate edit
+    # here, never a widening of what gets passed through.
+    # RECALL_HYBRID and RECALL_ENVELOPE are intentionally absent: their
+    # code defaults ('0' and '1' as of v0.4.0) are safe.
+    environment:
+      - MCP_PORT=3101
+      - SUPABASE_URL
+      - SUPABASE_SERVICE_KEY
+      - OPENAI_API_KEY
+      - EMBEDDING_MODEL
+      - SIMILARITY_THRESHOLD
+      - RECALL_TOKEN_CAP
+      - DEFAULT_RECALL_LIMIT
     entrypoint: ["npx", "tsx", "src/index.ts"]
 
   test:
@@ -39,7 +61,10 @@ services:
     volumes:
       - .:/app
       - memory_mcp_node_modules:/app/node_modules
-    env_file: .env
+    # .env is legacy (no longer generated); unit tests mock all secrets
+    env_file:
+      - path: .env
+        required: false
     entrypoint: ["npx", "vitest"]
 
 volumes:
