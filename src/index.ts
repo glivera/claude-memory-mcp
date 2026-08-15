@@ -93,7 +93,7 @@ function registerTools(server: McpServer): void {
 }
 
 async function startStdio(): Promise<void> {
-  const server = new McpServer({ name: 'memory', version: '0.1.0' });
+  const server = new McpServer({ name: 'memory', version: '0.3.0' });
   registerTools(server);
   const transport = new StdioServerTransport();
   await server.connect(transport);
@@ -112,7 +112,7 @@ function startHttp(): void {
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });
-    const server = new McpServer({ name: 'memory', version: '0.1.0' });
+    const server = new McpServer({ name: 'memory', version: '0.3.0' });
     registerTools(server);
     await server.connect(transport);
     await transport.handleRequest(req, res, req.body);

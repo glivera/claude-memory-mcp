@@ -1,7 +1,7 @@
 # Project: memory-mcp
 
 > MCP server providing persistent vector memory for Claude Code.
-> Tools: remember, recall, forget, project_status, pattern_store, pattern_search, pattern_mature, pattern_mark_as_skill, goal_progress, link_memories, compliance_trend.
+> Tools: remember, recall, forget, project_status, pattern_store, pattern_search, pattern_mature, pattern_mark_as_skill, goal_progress, link_memories, compliance_trend, update_memory_status, list_memories.
 
 ## ID: memory-mcp
 
@@ -13,7 +13,7 @@
 - **Transport:** Streamable HTTP (Express 5, port 3101)
 - **Database:** Supabase PostgreSQL + pgvector (cloud instance `nlvvhfwagdlfjjhouuae`)
 - **Embeddings:** OpenAI text-embedding-3-small (1536 dims, direct API)
-- **Testing:** Vitest (155 unit tests)
+- **Testing:** Vitest (196 unit tests)
 
 ## Architecture
 
@@ -31,7 +31,9 @@ Claude Code → HTTP POST http://localhost:3101/mcp (Streamable HTTP, JSON-RPC)
           ├── pattern_mark_as_skill → Supabase update (skill_created = true)
           ├── goal_progress   → Supabase RPC goal_progress_rpc (plan completion stats)
           ├── link_memories   → Supabase RPC link_memories_rpc (atomic UPDATE RETURNING)
-          └── compliance_trend → Supabase RPC compliance_trend_rpc (filtered by since_days)
+          ├── compliance_trend → Supabase RPC compliance_trend_rpc (filtered by since_days)
+          ├── update_memory_status → Supabase update (project_id ownership check, re-embed on closure)
+          └── list_memories   → Supabase select (exact filters, no embedding)
 ```
 
 - Each session gets its own McpServer + StreamableHTTPServerTransport instance
@@ -100,9 +102,11 @@ src/
     pattern-mature.ts   — find patterns seen 3+ times
     pattern-mark.ts     — mark patterns as converted to SKILL.md
     patterns-index.ts   — barrel: registers all 4 pattern tools
+    update-memory-status.ts — update status → append note + re-embed on closing statuses
+    list-memories.ts    — exact-filter select → compact rows + count, no embedding
 migrations/
   002_skill_patterns.sql — skill_patterns table, indexes, RPC functions
-tests/unit/             — 155 tests (mirrors src/ structure, mocks Supabase+OpenAI)
+tests/unit/             — 196 tests (mirrors src/ structure, mocks Supabase+OpenAI)
 ```
 
 ## Coding Standards

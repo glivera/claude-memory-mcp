@@ -433,7 +433,7 @@ Mark patterns as converted to SKILL.md files so they no longer appear in `patter
 
 ## Orchestration Tools (v0.2, optional)
 
-These three tools become available after applying [`migrations/003_orchestration_hardening.sql`](migrations/003_orchestration_hardening.sql). They enable multi-agent orchestration — plan enforcement, decision stress-testing, and compliance trends — on top of the same unified memory table.
+These five tools become available after applying [`migrations/003_orchestration_hardening.sql`](migrations/003_orchestration_hardening.sql). They enable multi-agent orchestration — plan enforcement, decision stress-testing, compliance trends, and status closure — on top of the same unified memory table.
 
 ### `goal_progress`
 
@@ -463,6 +463,31 @@ Return `compliance_check` memory entries for a project within the last N days, m
 | `project_id` | string | Yes | kebab-case project identifier |
 | `since_days` | number (1-365) | No | Lookback window (default 30) |
 
+### `update_memory_status`
+
+Update the status of an existing memory (`open`, `resolved`, `waived`, `superseded`). Requires a `project_id` ownership match — refuses to touch a memory belonging to another project. `resolution_note` is required when closing (`resolved`, `waived`, `superseded`); it is appended to the memory's `content` as a date-stamped `[CLOSURE ...]` line and the content is re-embedded, so a later `recall` of the memory surfaces the why and when. No transition guard — last-write-wins, re-opening a closed memory is allowed. Refuses expired or not-found rows.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `memory_id` | string (UUID) | Yes | Memory to update |
+| `project_id` | string | Yes | kebab-case project identifier, must match the memory's owning project |
+| `status` | enum | Yes | `open` \| `resolved` \| `waived` \| `superseded` |
+| `resolution_note` | string | Required for closing statuses | Appended to content with a `[CLOSURE <date> -> <status>]` prefix, then re-embedded |
+
+### `list_memories`
+
+Enumerate memories for a project by exact filters — no semantic search, no embedding. Use this for sweeps and counts where `recall`'s embedding-ranked top-N would miss or misrank results.
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `project_id` | string | Yes | kebab-case project identifier |
+| `memory_type` | enum | No | Filter to a single memory type |
+| `status` | enum | No | Filter to `open` \| `resolved` \| `waived` \| `superseded` |
+| `since_days` | number | No | Only memories created within the last N days |
+| `limit` | number | No | Max rows to return (default 50, max 100) |
+
+Returns compact rows (`id`, `title`, `memory_type`, `status`, `created_at`) plus an exact total count.
+
 ### New `memory_type` values (v0.2)
 
 The `remember` tool now accepts four additional types:
@@ -487,10 +512,10 @@ Add instructions to `~/.claude/CLAUDE.md` (global) or your project's `CLAUDE.md`
 ```markdown
 ## Memory System
 
-You have a persistent memory MCP server with up to 11 tools:
+You have a persistent memory MCP server with up to 13 tools:
 - **Memory (v0.1):** `remember`, `recall`, `forget`, `project_status`
 - **Skill Patterns (v0.1):** `pattern_store`, `pattern_search`, `pattern_mature`, `pattern_mark_as_skill`
-- **Orchestration (v0.2, if migration 003 applied):** `goal_progress`, `link_memories`, `compliance_trend`
+- **Orchestration (v0.2, if migration 003 applied):** `goal_progress`, `link_memories`, `compliance_trend`, `update_memory_status`, `list_memories`
 
 ### Determining project_id
 
@@ -581,9 +606,15 @@ src/
     pattern-mature.ts   — Find patterns seen 3+ times (skill candidates)
     pattern-mark.ts     — Mark patterns as converted to SKILL.md
     patterns-index.ts   — Barrel: registers all 4 pattern tools
+    goal-progress.ts    — Plan completion stats via goal_progress_rpc
+    link-memories.ts    — Atomic relation link via link_memories_rpc
+    compliance-trend.ts — compliance_check entries over N days via compliance_trend_rpc
+    update-memory-status.ts — Update status, append + re-embed content on closing statuses
+    list-memories.ts    — Exact-filter enumeration with count, no embedding
+    orchestration-index.ts — Barrel: registers all 5 orchestration tools
 migrations/
   002_skill_patterns.sql — Skill patterns table, indexes, RPC functions
-tests/unit/             — 125 unit tests (Vitest, mocks Supabase + OpenAI)
+tests/unit/             — 196 unit tests (Vitest, mocks Supabase + OpenAI)
 ```
 
 ## License

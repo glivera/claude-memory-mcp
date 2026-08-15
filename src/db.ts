@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { getConfig } from './config.js';
 import { DbError, ValidationError } from './errors.js';
+import { generateEmbedding } from './embedding.js';
 
 let client: SupabaseClient | null = null;
 
@@ -79,6 +80,19 @@ export interface LinkMemoriesResult {
   id: string;
   linked_to: string[];
   relation: string | null;
+}
+
+export interface MemoryListRow {
+  id: string;
+  title: string;
+  memory_type: string;
+  status: string | null;
+  created_at: string;
+}
+
+export interface ListMemoriesResult {
+  memories: MemoryListRow[];
+  total: number;
 }
 
 const TABLE = 'all_global_project_memory';
@@ -222,22 +236,107 @@ export async function linkMemoriesAtomic(
   return row;
 }
 
+async function resolveUpdateStatusNotFoundError(
+  memoryId: string,
+  projectId: string
+): Promise<ValidationError> {
+  const db = getSupabaseClient();
+  const { data } = await db
+    .from(TABLE)
+    .select('project_id')
+    .eq('id', memoryId)
+    .maybeSingle();
+
+  if (data && data.project_id !== projectId) {
+    return new ValidationError(`Memory ${memoryId} belongs to project ${data.project_id}, not ${projectId}`);
+  }
+  return new ValidationError(`Memory ${memoryId} not found or expired`);
+}
+
 export async function updateStatus(
   memoryId: string,
-  status: 'open' | 'resolved' | 'waived' | 'superseded'
+  projectId: string,
+  status: 'open' | 'resolved' | 'waived' | 'superseded',
+  resolutionNote?: string
 ): Promise<MemoryRow> {
   const db = getSupabaseClient();
+
+  if (resolutionNote) {
+    const { data: existing, error: readError } = await db
+      .from(TABLE)
+      .select('title, content')
+      .eq('id', memoryId)
+      .eq('project_id', projectId)
+      .or('expires_at.is.null,expires_at.gt.now()')
+      .maybeSingle();
+
+    if (readError) throw new DbError(`Status update read failed: ${readError.message}`, { cause: readError });
+    if (!existing) throw await resolveUpdateStatusNotFoundError(memoryId, projectId);
+
+    const closureLine = `\n\n[CLOSURE ${new Date().toISOString()} -> ${status}] ${resolutionNote}`;
+    const newContent = `${existing.content}${closureLine}`;
+    const embedding = await generateEmbedding(`${existing.title} ${newContent}`);
+
+    const { data, error } = await db
+      .from(TABLE)
+      .update({ status, content: newContent, embedding })
+      .eq('id', memoryId)
+      .eq('project_id', projectId)
+      .or('expires_at.is.null,expires_at.gt.now()')
+      .select()
+      .maybeSingle();
+
+    if (error) throw new DbError(`Status update failed: ${error.message}`, { cause: error });
+    if (!data) throw await resolveUpdateStatusNotFoundError(memoryId, projectId);
+    return data as MemoryRow;
+  }
+
   const { data, error } = await db
     .from(TABLE)
     .update({ status })
     .eq('id', memoryId)
+    .eq('project_id', projectId)
     .or('expires_at.is.null,expires_at.gt.now()')
     .select()
     .maybeSingle();
 
   if (error) throw new DbError(`Status update failed: ${error.message}`, { cause: error });
-  if (!data) throw new ValidationError(`Memory ${memoryId} not found or expired`);
+  if (!data) throw await resolveUpdateStatusNotFoundError(memoryId, projectId);
   return data as MemoryRow;
+}
+
+export async function listMemories(
+  projectId: string,
+  options: {
+    memoryType?: string;
+    status?: string;
+    sinceDays?: number;
+    limit?: number;
+  } = {}
+): Promise<ListMemoriesResult> {
+  const db = getSupabaseClient();
+  const { memoryType, status, sinceDays, limit } = options;
+
+  let query = db
+    .from(TABLE)
+    .select('id, title, memory_type, status, created_at', { count: 'exact' })
+    .eq('project_id', projectId)
+    .or('expires_at.is.null,expires_at.gt.now()')
+    .order('created_at', { ascending: false });
+
+  if (memoryType) query = query.eq('memory_type', memoryType);
+  if (status) query = query.eq('status', status);
+  if (sinceDays !== undefined) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - sinceDays);
+    query = query.gte('created_at', cutoff.toISOString());
+  }
+  if (limit !== undefined) query = query.limit(limit);
+
+  const { data, error, count } = await query;
+
+  if (error) throw new DbError(`List query failed: ${error.message}`, { cause: error });
+  return { memories: (data ?? []) as MemoryListRow[], total: count ?? 0 };
 }
 
 export async function expireMemoryById(memoryId: string): Promise<number> {

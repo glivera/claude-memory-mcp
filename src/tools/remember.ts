@@ -3,7 +3,7 @@ import { generateEmbedding } from '../embedding.js';
 import { insertMemory } from '../db.js';
 import { ValidationError } from '../errors.js';
 
-const MEMORY_TYPES = [
+export const MEMORY_TYPES = [
   'decision', 'bug_fix', 'pattern', 'context',
   'blocker', 'learning', 'convention', 'dependency',
   'goal', 'deviation', 'counter_argument', 'compliance_check',

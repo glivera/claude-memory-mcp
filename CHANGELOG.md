@@ -6,6 +6,32 @@ versioning follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.3.0] — 2026-08-15
+
+### Added
+
+- **`update_memory_status(memory_id, project_id, status, resolution_note?)`**
+  tool — updates the status of an existing memory. Requires `project_id`
+  ownership match. `resolution_note` is required for closing statuses
+  (`resolved`, `waived`, `superseded`); it is appended to `content` as a
+  date-stamped `[CLOSURE ...]` line and the content is re-embedded. No
+  transition guard — re-opening a closed memory is allowed.
+- **`list_memories(project_id, memory_type?, status?, since_days?, limit?)`**
+  tool — plain exact-filter enumeration (no embedding, no RPC). Returns
+  compact rows (`id`, `title`, `memory_type`, `status`, `created_at`) plus
+  an exact total count. Fills the gap `recall` cannot: enumeration and
+  counts, where `recall`'s embedding-ranked top-N is structurally wrong.
+- 24 new unit tests covering both tools (196 total).
+
+### Changed
+
+- **`updateStatus` db helper** now requires `project_id` and enforces
+  ownership: the update filters on `project_id` in addition to `id`, and
+  on a 0-row result does a secondary read to distinguish "belongs to a
+  different project" from "not found or expired".
+
+---
+
 ## [0.2.0] — 2026-04-19
 
 ### Orchestration & Hardening layer
