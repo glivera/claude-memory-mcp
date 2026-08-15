@@ -69,48 +69,26 @@ create index on all_global_project_memory
 -- Create index for project_id filtering
 create index on all_global_project_memory (project_id);
 
--- Create the vector search function
-create or replace function all_global_match_memories(
-  query_embedding vector(1536),
-  filter_project text default null,
-  filter_type text default null,
-  match_count int default 5,
-  threshold float default 0.25
-)
-returns table (
-  id uuid,
-  project_id text,
-  memory_type text,
-  title text,
-  content text,
-  tags text[],
-  similarity float,
-  session_id text,
-  created_at timestamptz
-)
-language plpgsql
-as $$
-begin
-  return query
-    select
-      m.id,
-      m.project_id,
-      m.memory_type,
-      m.title,
-      m.content,
-      m.tags,
-      1 - (m.embedding <=> query_embedding) as similarity,
-      m.session_id,
-      m.created_at
-    from all_global_project_memory m
-    where (m.expires_at is null or m.expires_at > now())
-      and (filter_project is null or m.project_id = filter_project)
-      and (filter_type is null or m.memory_type = filter_type)
-      and 1 - (m.embedding <=> query_embedding) > threshold
-    order by m.embedding <=> query_embedding
-    limit match_count;
-end;
-$$;
+-- The vector search function this app actually calls is
+-- all_global_match_memories_v2. Its canonical definition (plus the
+-- captured v1 that predates versioning, per commit 9a0cbc4) lives in
+-- migrations/005_recall_full_columns.sql -- apply that file rather
+-- than hand-writing the RPC here, since v1's signature drifted
+-- out-of-band from this README for ~4.5 months and this block is not
+-- kept in sync. v2 signature:
+--
+-- all_global_match_memories_v2(
+--   query_embedding vector,
+--   filter_project text default null,
+--   filter_type text default null,
+--   match_count integer default 5,
+--   threshold double precision default 0.25,
+--   min_created_at timestamptz default null
+-- ) returns table (
+--   id uuid, project_id text, memory_type text, title text, content text,
+--   tags text[], similarity double precision, session_id text,
+--   created_at timestamptz, status text, provenance text, trust_score real
+-- )
 
 -- Create stats view
 create or replace view all_global_memory_stats as
@@ -125,6 +103,8 @@ create or replace view all_global_memory_stats as
 ```
 
 Then run the Skill Patterns migration:
+
+> **Note:** `match_skill_patterns` below has a SQL default `match_threshold` of `0.9`, but the app (`pattern-store.ts`) always passes `0.75` explicitly (empirically calibrated, see `#pattern_store` below). The SQL default is inert and never actually used.
 
 ```sql
 -- Skill patterns table for tracking reusable work patterns
@@ -239,6 +219,8 @@ MCP_PORT=3101
 | `SIMILARITY_THRESHOLD` | No | Default: `0.25` (keep between 0.2–0.3, see [note](#similarity-threshold)) |
 | `RECALL_TOKEN_CAP` | No | Max tokens returned by recall. Default: `2000` |
 | `DEFAULT_RECALL_LIMIT` | No | Max memories per recall. Default: `5` |
+| `RECALL_ENVELOPE` | No | `0` or `1`. Default: `1`. When `1`, wraps `recall` results in the untrusted-data notice (see [`RECALL_NOTICE`](src/tools/recall.ts)) instead of returning a plain array. |
+| `RECALL_HYBRID` | No | `0` or `1`. Default: `0`, deliberately off. Enables the FTS + vector hybrid RPC (`all_global_match_memories_hybrid`, migration 004). Stays off because it failed its eval flip rule (see `docs/TASK-recall-upgrade.md`); do not flip without re-running that eval. |
 | `MCP_PORT` | No | Server port. Default: `3101` |
 | `MCP_TRANSPORT` | No | `http` (default) or `stdio` |
 
@@ -350,15 +332,22 @@ Returns memories ranked by semantic similarity, capped at `RECALL_TOKEN_CAP` tok
 
 ### `forget`
 
-Soft-delete memories (sets `expires_at`, never hard-deletes).
+Soft-delete memories (sets `expires_at`, never hard-deletes). `project_id` is required on every call and must match the memory's owning project (ownership check), protecting against cross-project id confusion.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
-| `memory_id` | string (UUID) | No* | Delete a specific memory |
-| `project_id` | string | No* | Delete all memories for a project |
-| `older_than_days` | number | No | Only expire memories older than N days (requires `project_id`) |
+| `project_id` | string | Yes | kebab-case project identifier; must match the memory's owning project |
+| `memory_id` | string (UUID) | No | Delete a specific memory. Omit to delete all memories for the project |
+| `older_than_days` | number | No | Only expire memories older than N days |
 
-\* At least one of `memory_id` or `project_id` is required.
+**Examples:**
+
+```
+forget(memory_id: "550e8400-e29b-41d4-a716-446655440000", project_id: "my-project")
+forget(project_id: "my-project", older_than_days: 90)
+```
+
+**Repeat-forget is safe.** Calling `forget` again on an already-expired memory in the right project always matches the row and returns `expired_count: 1` (it refreshes `expires_at`, which is harmless). This is not "count 0 for already-expired": there is no pre-read; the semantics are "the row was matched", not "the row's expiry state changed".
 
 ### `project_status`
 
@@ -376,7 +365,7 @@ Skill patterns track **reusable work approaches** that Claude discovers across s
 
 **How it works:**
 1. During work, Claude calls `pattern_store` when it notices a repeating approach
-2. If a similar pattern already exists (cosine similarity > 0.9), it merges — incrementing the count and appending the new example
+2. If a similar pattern already exists (cosine similarity > 0.75, empirically calibrated in commit 0dc52e3, 0.9 produced zero merges with text-embedding-3-small), it merges: incrementing the count and appending the new example
 3. If no similar pattern exists, a new one is created
 4. When a pattern reaches 3+ occurrences, it's flagged as `proposed_skill = true`
 5. Use `pattern_mature` to see which patterns are ready for skill generation
@@ -601,7 +590,7 @@ src/
     recall.ts           — Embed query -> vector search -> token-capped response
     forget.ts           — Soft-delete by ID, project, or age
     project-status.ts   — Stats view query + latest context
-    pattern-store.ts    — Smart upsert with deduplication (similarity > 0.9)
+    pattern-store.ts    — Smart upsert with deduplication (similarity > 0.75)
     pattern-search.ts   — Semantic search across skill patterns
     pattern-mature.ts   — Find patterns seen 3+ times (skill candidates)
     pattern-mark.ts     — Mark patterns as converted to SKILL.md
@@ -614,7 +603,7 @@ src/
     orchestration-index.ts — Barrel: registers all 5 orchestration tools
 migrations/
   002_skill_patterns.sql — Skill patterns table, indexes, RPC functions
-tests/unit/             — 196 unit tests (Vitest, mocks Supabase + OpenAI)
+tests/unit/             — 199 unit tests (Vitest, mocks Supabase + OpenAI)
 ```
 
 ## License

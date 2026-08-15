@@ -6,6 +6,48 @@ versioning follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.4.0] — 2026-08-15
+
+### Added
+
+- **`all_global_match_memories_v2`** and **`match_memories_with_links_v2`**
+  RPCs (`migrations/005_recall_full_columns.sql`). Both `recall` paths now
+  return `status`, `provenance`, and `trust_score` on every row, closing the
+  gap where unfiltered recall could not label resolved/superseded/waived
+  entries. Migration 005 also captures the live `all_global_match_memories`
+  v1 definition (previously undocumented, changed out-of-band in commit
+  9a0cbc4) so it is versioned in a file for the first time.
+- Startup invariant: `SIMILARITY_THRESHOLD > 0.4` now logs a loud warning
+  at server start, naming the documented empty-results boundary for
+  `text-embedding-3-small`.
+- Tool-layer request logging (`logToolCall` in `src/index.ts`). Every
+  `remember`/`recall`/`forget`/`project_status` call logs one stderr line
+  with tool name, project, memory_id, duration, and outcome. Destructive
+  operations (`forget`) can now be reconstructed from `docker logs` alone.
+  `docker-compose.yml` adds `json-file` log rotation (10m / 3 files) to
+  the `memory-mcp` service.
+
+### Changed
+
+- **`SIMILARITY_THRESHOLD`** code default: `0.7` → `0.25`, matching the
+  documented and production value (previously safe only via an untracked
+  `.env`).
+- **`RECALL_ENVELOPE`** code default: `'0'` → `'1'` (same untracked-.env
+  class as above; the envelope must not depend on an untracked file).
+- **`forget`** now requires `project_id` (kebab-case) on every call and
+  enforces ownership: `expireMemoryById` filters by `project_id` in
+  addition to `id`, distinguishing "belongs to a different project" from
+  "not found or expired". Repeat-forget of an already-expired memory in
+  the right project returns `expired_count: 1` (not 0); this is
+  documented as intentional, not a regression.
+- Docs realigned to the pattern-dedup reality: `DEDUP_THRESHOLD` is `0.75`
+  (empirically calibrated in commit 0dc52e3, `0.9` produced zero merges
+  with `text-embedding-3-small`), not `0.9` as several docs previously
+  claimed.
+- Version bumped to 0.4.0 (`package.json`, `McpServer` version strings).
+
+---
+
 ## [0.3.0] — 2026-08-15
 
 ### Added
@@ -100,6 +142,6 @@ continue operating on the 8-tool surface indefinitely.
 - Docker + docker-compose deploy
 - Soft-delete via `expires_at` (never hard-delete)
 - Auto-deduplication on `pattern_store` (cosine sim > 0.9 → merge +
-  count+1; else create)
+  count+1; else create) (later recalibrated to 0.75)
 - Skill maturation heuristic (`pattern_mature`): pattern seen 3+
   times flagged as SKILL.md candidate

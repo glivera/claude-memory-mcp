@@ -5,6 +5,7 @@ import { handleLinkMemories, linkMemoriesInputSchema } from './link-memories.js'
 import { handleComplianceTrend, complianceTrendInputSchema } from './compliance-trend.js';
 import { handleUpdateMemoryStatus, updateMemoryStatusInputSchema } from './update-memory-status.js';
 import { handleListMemories, listMemoriesInputSchema } from './list-memories.js';
+import { logToolCall } from '../log.js';
 
 export { handleGoalProgress, goalProgressInputSchema, type GoalProgressInput } from './goal-progress.js';
 export { handleLinkMemories, linkMemoriesInputSchema, type LinkMemoriesInput } from './link-memories.js';
@@ -28,10 +29,13 @@ export function registerOrchestrationTools(server: McpServer): void {
     'Get plan completion stats for a project. Returns total_goals, completed, in_progress, deviations_open, completion_pct.',
     goalProgressInputSchema.shape,
     async (input) => {
+      const startMs = Date.now();
       try {
         const result = await handleGoalProgress(input);
+        logToolCall('goal_progress', input, startMs);
         return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
       } catch (err) {
+        logToolCall('goal_progress', input, startMs, err);
         return formatError(err);
       }
     }
@@ -42,10 +46,13 @@ export function registerOrchestrationTools(server: McpServer): void {
     'Link a memory to other memories with a semantic relation (counters, fulfills, deviates_from, blocks, resolves, supersedes). Atomic — race-free.',
     linkMemoriesInputSchema.shape,
     async (input) => {
+      const startMs = Date.now();
       try {
         const result = await handleLinkMemories(input);
+        logToolCall('link_memories', input, startMs);
         return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
       } catch (err) {
+        logToolCall('link_memories', input, startMs, err);
         return formatError(err);
       }
     }
@@ -56,10 +63,13 @@ export function registerOrchestrationTools(server: McpServer): void {
     'Return compliance_check memories for a project within the last N days (default 30, max 365), most recent first.',
     complianceTrendInputSchema.shape,
     async (input) => {
+      const startMs = Date.now();
       try {
         const results = await handleComplianceTrend(input);
+        logToolCall('compliance_trend', input, startMs);
         return { content: [{ type: 'text' as const, text: JSON.stringify(results, null, 2) }] };
       } catch (err) {
+        logToolCall('compliance_trend', input, startMs, err);
         return formatError(err);
       }
     }
@@ -70,10 +80,13 @@ export function registerOrchestrationTools(server: McpServer): void {
     'Update the status of an existing memory (open, resolved, waived, superseded). Requires project_id ownership match — refuses memories belonging to another project. resolution_note is required when closing (resolved, waived, superseded); it is appended to the memory content with a date-stamped [CLOSURE] line and the content is re-embedded. No transition guard — last-write-wins, re-opening a closed memory is allowed. Refuses expired or not-found rows.',
     updateMemoryStatusInputSchema.shape,
     async (input) => {
+      const startMs = Date.now();
       try {
         const result = await handleUpdateMemoryStatus(input);
+        logToolCall('update_memory_status', input, startMs);
         return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
       } catch (err) {
+        logToolCall('update_memory_status', input, startMs, err);
         return formatError(err);
       }
     }
@@ -84,10 +97,13 @@ export function registerOrchestrationTools(server: McpServer): void {
     'Enumerate memories for a project by exact filters (memory_type, status, since_days) — no semantic search, no embedding. Use this for sweeps and counts where recall\'s embedding-ranked top-N would miss or misrank results. Returns compact rows (id, title, memory_type, status, created_at) plus an exact total count.',
     listMemoriesInputSchema.shape,
     async (input) => {
+      const startMs = Date.now();
       try {
         const result = await handleListMemories(input);
+        logToolCall('list_memories', input, startMs);
         return { content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }] };
       } catch (err) {
+        logToolCall('list_memories', input, startMs, err);
         return formatError(err);
       }
     }

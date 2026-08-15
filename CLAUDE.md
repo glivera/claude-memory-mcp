@@ -13,7 +13,7 @@
 - **Transport:** Streamable HTTP (Express 5, port 3101)
 - **Database:** Supabase PostgreSQL + pgvector (cloud instance `nlvvhfwagdlfjjhouuae`)
 - **Embeddings:** OpenAI text-embedding-3-small (1536 dims, direct API)
-- **Testing:** Vitest (196 unit tests)
+- **Testing:** Vitest (199 unit tests)
 
 ## Architecture
 
@@ -75,7 +75,7 @@ MCP_PORT              — default: 3101
 
 - **Table:** `all_global_project_memory` (id, project_id, memory_type, title, content, tags, embedding vector(1536), session_id, created_at, expires_at)
 - **Table:** `skill_patterns` (id, pattern_id, description, category, project, examples jsonb, count, first_seen, last_seen, proposed_skill, skill_created, embedding vector(1536))
-- **RPC:** `all_global_match_memories(query_embedding, filter_project, filter_type, match_count, threshold)` — vector similarity search, filters expired entries
+- **RPC:** `all_global_match_memories_v2(query_embedding, filter_project, filter_type, match_count, threshold, min_created_at)` — vector similarity search, filters expired entries, returns status/provenance/trust_score (migrations/005)
 - **RPC:** `match_skill_patterns(query_embedding, match_threshold, match_count, filter_category, filter_project)` — pattern dedup and search
 - **RPC:** `get_mature_patterns(min_count, filter_category, exclude_created)` — patterns seen N+ times
 - **View:** `all_global_memory_stats` — per-project stats (project_id, memory_type, count, last_updated)
@@ -106,7 +106,7 @@ src/
     list-memories.ts    — exact-filter select → compact rows + count, no embedding
 migrations/
   002_skill_patterns.sql — skill_patterns table, indexes, RPC functions
-tests/unit/             — 196 tests (mirrors src/ structure, mocks Supabase+OpenAI)
+tests/unit/             — 199 tests (mirrors src/ structure, mocks Supabase+OpenAI)
 ```
 
 ## Coding Standards

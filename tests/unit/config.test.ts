@@ -42,11 +42,11 @@ describe('config', () => {
     setRequiredEnv();
     const config = getConfig();
     expect(config.EMBEDDING_MODEL).toBe('text-embedding-3-small');
-    expect(config.SIMILARITY_THRESHOLD).toBe(0.7);
+    expect(config.SIMILARITY_THRESHOLD).toBe(0.25);
     expect(config.RECALL_TOKEN_CAP).toBe(2000);
     expect(config.DEFAULT_RECALL_LIMIT).toBe(5);
     expect(config.RECALL_HYBRID).toBe('0');
-    expect(config.RECALL_ENVELOPE).toBe('0');
+    expect(config.RECALL_ENVELOPE).toBe('1');
   });
 
   it('should allow overriding optional vars', () => {
@@ -140,6 +140,27 @@ describe('config', () => {
     it('should reject non-enum values like "true"', () => {
       setRequiredEnv();
       process.env.RECALL_HYBRID = 'true';
+      expect(() => getConfig()).toThrow('Invalid configuration');
+    });
+  });
+
+  describe('RECALL_ENVELOPE', () => {
+    it('should default to "1" when not set', () => {
+      setRequiredEnv();
+      const config = getConfig();
+      expect(config.RECALL_ENVELOPE).toBe('1');
+    });
+
+    it('should accept "0"', () => {
+      setRequiredEnv();
+      process.env.RECALL_ENVELOPE = '0';
+      const config = getConfig();
+      expect(config.RECALL_ENVELOPE).toBe('0');
+    });
+
+    it('should reject non-enum values like "true"', () => {
+      setRequiredEnv();
+      process.env.RECALL_ENVELOPE = 'true';
       expect(() => getConfig()).toThrow('Invalid configuration');
     });
   });

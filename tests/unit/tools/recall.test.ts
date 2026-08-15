@@ -12,7 +12,7 @@ vi.mock('../../../src/db.js', () => ({
 
 vi.mock('../../../src/config.js', () => ({
   getConfig: vi.fn().mockReturnValue({
-    SIMILARITY_THRESHOLD: 0.7,
+    SIMILARITY_THRESHOLD: 0.25,
     RECALL_TOKEN_CAP: 2000,
     DEFAULT_RECALL_LIMIT: 5,
     RECALL_HYBRID: '0',
@@ -66,7 +66,7 @@ describe('handleRecall', () => {
     mockMatchMemories.mockResolvedValue(fakeResults);
     mockMatchMemoriesHybrid.mockResolvedValue(fakeResults);
     mockGetConfig.mockReturnValue({
-      SIMILARITY_THRESHOLD: 0.7,
+      SIMILARITY_THRESHOLD: 0.25,
       RECALL_TOKEN_CAP: 2000,
       DEFAULT_RECALL_LIMIT: 5,
       RECALL_HYBRID: '0',
@@ -106,7 +106,7 @@ describe('handleRecall', () => {
       'my-project',
       'decision',
       10,
-      0.7,
+      0.25,
       null
     );
   });
@@ -119,7 +119,7 @@ describe('handleRecall', () => {
       null,
       null,
       5,
-      0.7,
+      0.25,
       null
     );
   });
@@ -132,7 +132,7 @@ describe('handleRecall', () => {
       null,
       null,
       5,
-      0.7,
+      0.25,
       null
     );
   });
@@ -196,7 +196,7 @@ describe('handleRecall', () => {
       after.setDate(after.getDate() - 7);
 
       expect(mockMatchMemories).toHaveBeenCalledWith(
-        fakeEmbedding, null, null, 5, 0.7,
+        fakeEmbedding, null, null, 5, 0.25,
         expect.any(String)
       );
 
@@ -209,7 +209,7 @@ describe('handleRecall', () => {
       await handleRecall({ query: 'test' });
 
       expect(mockMatchMemories).toHaveBeenCalledWith(
-        fakeEmbedding, null, null, 5, 0.7, null
+        fakeEmbedding, null, null, 5, 0.25, null
       );
     });
 
@@ -217,7 +217,7 @@ describe('handleRecall', () => {
       await handleRecall({ query: 'test', since_days: 7, limit: 5 });
 
       expect(mockMatchMemories).toHaveBeenCalledWith(
-        fakeEmbedding, null, null, 5, 0.7,
+        fakeEmbedding, null, null, 5, 0.25,
         expect.any(String)
       );
     });
@@ -331,7 +331,7 @@ describe('handleRecall', () => {
 
     it('should route to matchMemoriesHybrid with the query text as second arg when RECALL_HYBRID=1', async () => {
       mockGetConfig.mockReturnValue({
-        SIMILARITY_THRESHOLD: 0.7,
+        SIMILARITY_THRESHOLD: 0.25,
         RECALL_TOKEN_CAP: 2000,
         DEFAULT_RECALL_LIMIT: 5,
         RECALL_HYBRID: '1',
@@ -347,7 +347,7 @@ describe('handleRecall', () => {
 
     it('should always use matchMemoriesWithLinks for the extended path (follow_links=true), regardless of RECALL_HYBRID', async () => {
       mockGetConfig.mockReturnValue({
-        SIMILARITY_THRESHOLD: 0.7,
+        SIMILARITY_THRESHOLD: 0.25,
         RECALL_TOKEN_CAP: 2000,
         DEFAULT_RECALL_LIMIT: 5,
         RECALL_HYBRID: '1',

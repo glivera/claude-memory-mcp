@@ -23,33 +23,17 @@ describe('handleForget', () => {
 
       const result = await handleForget({
         memory_id: '550e8400-e29b-41d4-a716-446655440000',
+        project_id: 'my-project',
       });
 
-      expect(mockExpireById).toHaveBeenCalledWith('550e8400-e29b-41d4-a716-446655440000');
+      expect(mockExpireById).toHaveBeenCalledWith(
+        '550e8400-e29b-41d4-a716-446655440000',
+        'my-project'
+      );
       expect(result.expired_count).toBe(1);
     });
 
-    it('should return expired_count 0 when memory not found', async () => {
-      mockExpireById.mockResolvedValue(0);
-
-      const result = await handleForget({
-        memory_id: '550e8400-e29b-41d4-a716-446655440000',
-      });
-
-      expect(result.expired_count).toBe(0);
-    });
-
-    it('should set project_id to "unknown" when only memory_id provided', async () => {
-      mockExpireById.mockResolvedValue(1);
-
-      const result = await handleForget({
-        memory_id: '550e8400-e29b-41d4-a716-446655440000',
-      });
-
-      expect(result.project_id).toBe('unknown');
-    });
-
-    it('should use provided project_id when both memory_id and project_id given', async () => {
+    it('should use the provided project_id in the result', async () => {
       mockExpireById.mockResolvedValue(1);
 
       const result = await handleForget({
@@ -112,20 +96,50 @@ describe('handleForget', () => {
     });
   });
 
+  describe('repeat forget (idempotency)', () => {
+    it('should return count 1 without error when forgetting an already-expired memory in the right project', async () => {
+      mockExpireById.mockResolvedValue(1);
+
+      const result = await handleForget({
+        memory_id: '550e8400-e29b-41d4-a716-446655440000',
+        project_id: 'my-project',
+      });
+
+      expect(result.expired_count).toBe(1);
+    });
+  });
+
+  describe('ownership', () => {
+    it('should propagate a "belongs to project" error from the db layer', async () => {
+      mockExpireById.mockRejectedValue(
+        new ValidationError(
+          'Memory 550e8400-e29b-41d4-a716-446655440000 belongs to project other-project, not my-project'
+        )
+      );
+
+      await expect(
+        handleForget({
+          memory_id: '550e8400-e29b-41d4-a716-446655440000',
+          project_id: 'my-project',
+        })
+      ).rejects.toThrow('belongs to project other-project, not my-project');
+    });
+  });
+
   describe('validation errors', () => {
-    it('should throw ValidationError when neither memory_id nor project_id provided', async () => {
+    it('should throw ValidationError when project_id is missing', async () => {
       await expect(handleForget({} as any)).rejects.toThrow(ValidationError);
     });
 
-    it('should throw ValidationError when older_than_days provided without project_id', async () => {
+    it('should throw ValidationError when project_id is not kebab-case', async () => {
       await expect(
-        handleForget({ older_than_days: 30 } as any)
+        handleForget({ project_id: 'My Project' } as any)
       ).rejects.toThrow(ValidationError);
     });
 
     it('should throw ValidationError for invalid UUID memory_id', async () => {
       await expect(
-        handleForget({ memory_id: 'not-a-uuid' })
+        handleForget({ memory_id: 'not-a-uuid', project_id: 'my-project' })
       ).rejects.toThrow(ValidationError);
     });
 

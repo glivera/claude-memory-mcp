@@ -133,7 +133,7 @@ export async function matchMemories(
   if (minCreatedAt) {
     params.min_created_at = minCreatedAt;
   }
-  const { data, error } = await db.rpc('all_global_match_memories', params);
+  const { data, error } = await db.rpc('all_global_match_memories_v2', params);
 
   if (error) throw new DbError(`Match query failed: ${error.message}`, { cause: error });
   return (data ?? []) as MatchResult[];
@@ -174,7 +174,7 @@ export async function matchMemoriesWithLinks(
   followLinks: boolean
 ): Promise<MatchResult[]> {
   const db = getSupabaseClient();
-  const { data, error } = await db.rpc('match_memories_with_links_rpc', {
+  const { data, error } = await db.rpc('match_memories_with_links_v2', {
     query_embedding: queryEmbedding,
     filter_project: filterProject,
     filter_type: filterType,
@@ -185,7 +185,7 @@ export async function matchMemoriesWithLinks(
     follow_links: followLinks,
   });
 
-  if (error) throw new DbError(`match_memories_with_links_rpc failed: ${error.message}`, { cause: error });
+  if (error) throw new DbError(`match_memories_with_links_v2 failed: ${error.message}`, { cause: error });
   return (data ?? []) as MatchResult[];
 }
 
@@ -236,7 +236,7 @@ export async function linkMemoriesAtomic(
   return row;
 }
 
-async function resolveUpdateStatusNotFoundError(
+async function resolveNotFoundError(
   memoryId: string,
   projectId: string
 ): Promise<ValidationError> {
@@ -271,7 +271,7 @@ export async function updateStatus(
       .maybeSingle();
 
     if (readError) throw new DbError(`Status update read failed: ${readError.message}`, { cause: readError });
-    if (!existing) throw await resolveUpdateStatusNotFoundError(memoryId, projectId);
+    if (!existing) throw await resolveNotFoundError(memoryId, projectId);
 
     const closureLine = `\n\n[CLOSURE ${new Date().toISOString()} -> ${status}] ${resolutionNote}`;
     const newContent = `${existing.content}${closureLine}`;
@@ -287,7 +287,7 @@ export async function updateStatus(
       .maybeSingle();
 
     if (error) throw new DbError(`Status update failed: ${error.message}`, { cause: error });
-    if (!data) throw await resolveUpdateStatusNotFoundError(memoryId, projectId);
+    if (!data) throw await resolveNotFoundError(memoryId, projectId);
     return data as MemoryRow;
   }
 
@@ -301,7 +301,7 @@ export async function updateStatus(
     .maybeSingle();
 
   if (error) throw new DbError(`Status update failed: ${error.message}`, { cause: error });
-  if (!data) throw await resolveUpdateStatusNotFoundError(memoryId, projectId);
+  if (!data) throw await resolveNotFoundError(memoryId, projectId);
   return data as MemoryRow;
 }
 
@@ -339,11 +339,12 @@ export async function listMemories(
   return { memories: (data ?? []) as MemoryListRow[], total: count ?? 0 };
 }
 
-export async function expireMemoryById(memoryId: string): Promise<number> {
+export async function expireMemoryById(memoryId: string, projectId: string): Promise<number> {
   const db = getSupabaseClient();
-  // Idempotent: re-expiring an already-expired row is a no-op from the
-  // recall perspective (it's already filtered out) but will refresh
-  // expires_at. We omit the or() guard on expires_at here for two reasons:
+  // Idempotent: re-expiring an already-expired row (in the right project)
+  // is a no-op from the recall perspective (it's already filtered out)
+  // but will refresh expires_at and still return count 1. We omit the
+  // or() guard on expires_at here for two reasons:
   //   1. PostgREST rejects `or(expires_at...)` + `select('id')` + UPDATE
   //      with error 42703 "column expires_at does not exist" because the
   //      RETURNING projection doesn't include expires_at.
@@ -355,10 +356,13 @@ export async function expireMemoryById(memoryId: string): Promise<number> {
     .from(TABLE)
     .update({ expires_at: new Date().toISOString() })
     .eq('id', memoryId)
+    .eq('project_id', projectId)
     .select('id');
 
   if (error) throw new DbError(`Expire by ID failed: ${error.message}`, { cause: error });
-  return data?.length ?? 0;
+  const count = data?.length ?? 0;
+  if (count === 0) throw await resolveNotFoundError(memoryId, projectId);
+  return count;
 }
 
 export async function expireMemoriesByProject(

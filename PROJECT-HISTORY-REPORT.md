@@ -173,7 +173,7 @@ Production — actively running as always-on Docker container, serving multiple 
 - Dependencies: 5 production, 5 dev
 
 ### Known Technical Debt
-1. **config.ts default mismatch:** `SIMILARITY_THRESHOLD` defaults to 0.7 in code but actual production uses 0.25 (set via env var). Code default should be updated.
+1. **config.ts default mismatch:** `SIMILARITY_THRESHOLD` defaults to 0.7 in code but actual production uses 0.25 (set via env var). Code default should be updated. RESOLVED 2026-08-15: code default changed to 0.25.
 2. **OpenRouter references in tests:** Some test files reference `OPENROUTER_API_KEY` — outdated after migration to direct OpenAI.
 3. **No integration tests:** Only unit tests with mocked Supabase/OpenAI. No tests against real services.
 4. **Session loss on restart:** MCP sessions are in-memory; container restart requires Claude Code session restart.
