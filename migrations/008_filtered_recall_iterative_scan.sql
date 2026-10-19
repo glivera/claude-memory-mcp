@@ -8,9 +8,18 @@
 -- were never reached.
 --
 -- Fix, applied to both v2 recall RPCs:
---   - Function-level `SET hnsw.iterative_scan = relaxed_order`
---     (pgvector 0.8): the index scan keeps walking the graph until
---     LIMIT rows have passed the WHERE filters.
+--   - `hnsw.iterative_scan = relaxed_order` (pgvector 0.8): the index
+--     scan keeps walking the graph until LIMIT rows have passed the
+--     WHERE filters. The GUC is set per call via
+--     set_config(..., is_local => true) at the top of the body and
+--     restored to its previous value before returning, because storing
+--     a pgvector GUC in a function SET clause requires superuser
+--     (ERROR 42501 seen on the 2026-10-20 dry-run). set_config by the
+--     calling role is allowed at runtime (verified: off=1, on=5 rows).
+--     The function SET clause only scopes plan_cache_mode;
+--     set_config(is_local) on hnsw.iterative_scan would otherwise
+--     persist to the end of the caller's transaction, so the explicit
+--     restore is load-bearing (apply-008.sh compile check asserts it).
 --   - Candidates live in a MATERIALIZED CTE with an outer re-sort by
 --     distance (the pgvector docs pattern for relaxed_order, which
 --     does not guarantee exact order inside the scan).
@@ -78,10 +87,13 @@ returns table (
   trust_score real
 )
 language plpgsql
-set hnsw.iterative_scan = 'relaxed_order'
 set plan_cache_mode = 'force_custom_plan'
 as $function$
+declare
+  prev_iter text;
 begin
+  prev_iter := current_setting('hnsw.iterative_scan', true);
+  perform set_config('hnsw.iterative_scan', 'relaxed_order', true);
   return query
   with candidates as materialized (
     select
@@ -104,6 +116,7 @@ begin
   from candidates c
   where (1 - c.distance) >= threshold
   order by c.distance;
+  perform set_config('hnsw.iterative_scan', coalesce(nullif(prev_iter, ''), 'off'), true);
 end;
 $function$;
 
@@ -144,12 +157,14 @@ returns table (
 )
 language plpgsql
 stable
-set hnsw.iterative_scan = 'relaxed_order'
 set plan_cache_mode = 'force_custom_plan'
 as $function$
 declare
   matched_ids uuid[];
+  prev_iter text;
 begin
+  prev_iter := current_setting('hnsw.iterative_scan', true);
+  perform set_config('hnsw.iterative_scan', 'relaxed_order', true);
   -- Phase 1: regular vector match
   return query
   with candidates as materialized (
@@ -178,6 +193,7 @@ begin
   order by c.distance;
 
   if not follow_links then
+    perform set_config('hnsw.iterative_scan', coalesce(nullif(prev_iter, ''), 'off'), true);
     return;
   end if;
 
@@ -217,6 +233,7 @@ begin
   )
   and (linked.expires_at is null or linked.expires_at > now())
   and linked.id <> all (coalesce(matched_ids, '{}'::uuid[]));
+  perform set_config('hnsw.iterative_scan', coalesce(nullif(prev_iter, ''), 'off'), true);
 end $function$;
 
 notify pgrst, 'reload schema';

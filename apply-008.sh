@@ -87,7 +87,7 @@ q() {
   printf '%s' "$json"
 }
 
-FN_SQL="select p.proname, pg_get_function_identity_arguments(p.oid) args, md5(pg_get_functiondef(p.oid)) h, p.proconfig from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('all_global_match_memories_v2','match_memories_with_links_v2') order by p.proname"
+FN_SQL="select p.proname, pg_get_function_identity_arguments(p.oid) args, md5(pg_get_functiondef(p.oid)) h, p.proconfig, position('set_config(''hnsw.iterative_scan'', ''relaxed_order'', true)' in pg_get_functiondef(p.oid)) > 0 as has_iter from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('all_global_match_memories_v2','match_memories_with_links_v2') order by p.proname"
 
 hashes() { printf '%s' "$1" | jq -r '[.[] | "\(.proname)=\(.h)"] | join(" ")'; }
 
@@ -116,9 +116,9 @@ if [ "$(printf '%s' "$R" | jq 'length')" -ne 2 ]; then
   OUTCOME="aborted: expected exactly 2 functions, found $(printf '%s' "$R" | jq 'length')"; echo "$OUTCOME"; exit 1
 fi
 HASH_BEFORE=$(hashes "$R")
-if [ "$(printf '%s' "$R" | jq '[.[] | select((.proconfig // []) | any(. == "hnsw.iterative_scan=relaxed_order"))] | length')" -eq 2 ]; then
+if [ "$(printf '%s' "$R" | jq '[.[] | select(((.proconfig // []) | any(. == "plan_cache_mode=force_custom_plan")) and .has_iter == true)] | length')" -eq 2 ]; then
   OUTCOME="already applied"
-  echo "already applied: both functions carry hnsw.iterative_scan=relaxed_order"
+  echo "already applied: both functions carry plan_cache_mode=force_custom_plan and the in-body hnsw.iterative_scan set_config"
   exit 0
 fi
 
@@ -143,19 +143,25 @@ else
   MIG_BODY=$(grep -v '^notify pgrst' "$MIGRATION")
   COMPILE_SQL="begin;
 $MIG_BODY
-select (select count(*) from public.all_global_match_memories_v2((select embedding from public.all_global_project_memory where id='$FIXED_ID'), 'n8n-pilot', null, 5, 0.25, null)) as n, (select count(*) from public.match_memories_with_links_v2((select embedding from public.all_global_project_memory where id='$FIXED_ID'), 'n8n-pilot', null, null, 5, 0.25, null, true)) as n_links;
+create temp table _apply008_r on commit drop as select (select count(*) from public.all_global_match_memories_v2((select embedding from public.all_global_project_memory where id='$FIXED_ID'), 'n8n-pilot', null, 5, 0.25, null)) as n, (select count(*) from public.match_memories_with_links_v2((select embedding from public.all_global_project_memory where id='$FIXED_ID'), 'n8n-pilot', null, null, 5, 0.25, null, true)) as n_links;
+select n, n_links, coalesce(current_setting('hnsw.iterative_scan', true), '') as iter_after from _apply008_r;
 rollback;"
   R=$(q "$COMPILE_SQL" false) || { OUTCOME="aborted: step 5 compile check request failed"; exit 1; }
   echo "$R"
   COMPILE_N=$(printf '%s' "$R" | jq -r '[.. | objects | select(has("n")) | .n][0] // empty')
   COMPILE_NL=$(printf '%s' "$R" | jq -r '[.. | objects | select(has("n_links")) | .n_links][0] // empty')
-  echo "compile check: v2 n=${COMPILE_N:-unparsed} (expect 5), links_v2 n_links=${COMPILE_NL:-unparsed} (expect >= 5)"
+  COMPILE_IT=$(printf '%s' "$R" | jq -r '[.. | objects | select(has("iter_after")) | .iter_after][0] // "unparsed"')
+  echo "compile check: v2 n=${COMPILE_N:-unparsed} (expect 5), links_v2 n_links=${COMPILE_NL:-unparsed} (expect >= 5), iter_after='${COMPILE_IT}' (expect '' or off)"
   case "$COMPILE_N:$COMPILE_NL" in *[!0-9:]*|:*|*:) COMPILE_BAD=1 ;; *) COMPILE_BAD=0 ;; esac
+  if [ "$COMPILE_BAD" = 0 ] && [ "$COMPILE_N" = "5" ] && [ "$COMPILE_NL" -ge 5 ] && [ -n "$COMPILE_IT" ] && [ "$COMPILE_IT" != "off" ]; then
+    COMPILE="FAILED (GUC leaked: iter_after=$COMPILE_IT; rolled back)"
+    OUTCOME="aborted: GUC leaked: hnsw.iterative_scan=$COMPILE_IT after call"; echo "$OUTCOME"; exit 1
+  fi
   if [ "$COMPILE_BAD" = 1 ] || [ "$COMPILE_N" != "5" ] || [ "$COMPILE_NL" -lt 5 ]; then
-    COMPILE="FAILED (n=${COMPILE_N:-unparsed}, n_links=${COMPILE_NL:-unparsed}; rolled back)"
+    COMPILE="FAILED (n=${COMPILE_N:-unparsed}, n_links=${COMPILE_NL:-unparsed}, iter_after='${COMPILE_IT}'; rolled back)"
     OUTCOME="aborted: compile check failed (need n==5 and n_links>=5)"; echo "$OUTCOME"; exit 1
   fi
-  COMPILE="ok (rolled back) n=$COMPILE_N n_links=$COMPILE_NL"
+  COMPILE="ok (rolled back) n=$COMPILE_N n_links=$COMPILE_NL iter_after='$COMPILE_IT'"
   echo "compile check: $COMPILE"
 fi
 
@@ -174,7 +180,7 @@ echo "-- verify function state"
 R=$(q "$FN_SQL" true) || { OUTCOME="applied but verify query failed; rollback: apply $BACKUP"; exit 1; }
 printf '%s' "$R" | jq -c '.[]'
 HASH_AFTER=$(hashes "$R")
-OKCNT=$(printf '%s' "$R" | jq '[.[] | select((.proconfig // []) | (any(. == "hnsw.iterative_scan=relaxed_order") and any(. == "plan_cache_mode=force_custom_plan")))] | length')
+OKCNT=$(printf '%s' "$R" | jq '[.[] | select(((.proconfig // []) | any(. == "plan_cache_mode=force_custom_plan")) and .has_iter == true)] | length')
 if [ "$OKCNT" -ne 2 ]; then
   OUTCOME="applied but proconfig verification failed; rollback: apply $BACKUP"
   echo "$OUTCOME"
