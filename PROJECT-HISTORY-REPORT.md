@@ -185,7 +185,7 @@ Production — actively running as always-on Docker container, serving multiple 
 ## 9. Business Impact Indicators
 
 - **Sessions served:** 8-10 concurrent Claude Code sessions (visible from health endpoint design and architecture decision)
-- **Projects tracked:** Actively used across multiple projects (memory-mcp, maxreach, zcare-milestone2 visible in memory database)
+- **Projects tracked:** Actively used across multiple client projects
 - **Automation savings:** Eliminates repeated context-setting at session start. Before: 5-10 minutes explaining project state each session. After: instant recall of decisions, conventions, and recent work.
 - **Knowledge retention:** Captures architectural decisions, bug fixes, patterns, and conventions that would otherwise exist only in developer's head or scattered across commit messages.
 - **Cross-project learning:** Patterns discovered in one project (Docker configurations, API integration tricks, TypeScript patterns) are automatically findable from any other project.
