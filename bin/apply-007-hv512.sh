@@ -24,7 +24,7 @@ exec > >(tee -a "$LOG") 2>&1
 PGV="n/a"; ROWS="n/a"; ROWS_EMB="n/a"; ROLE="n/a"; STMT_TO="n/a"; OUTCOME="aborted: unknown"; NEW_SIZE="n/a"
 
 summary() {
-  local rc=$?
+  local rc=${1:-$?}
   local end_epoch; end_epoch=$(date +%s)
   echo
   echo "===== SUMMARY ====="
@@ -52,14 +52,18 @@ if [ -z "$SQL_STMT" ] || ! printf '%s' "$SQL_STMT" | grep -q ';[[:space:]]*$'; t
   exit 1
 fi
 
-TOK=$(doppler secrets get SUPABASE_ACCESS_TOKEN --project n8n-pilot --config dev --plain)
+# Token goes into a 0600 header file read by curl (-H @file), never into argv.
+HDR=$(mktemp)
+chmod 600 "$HDR"
+trap 'rc=$?; rm -f "$HDR"; summary "$rc"; exit "$rc"' EXIT
+printf 'Authorization: Bearer %s\n' "$(doppler secrets get SUPABASE_ACCESS_TOKEN --project n8n-pilot --config dev --plain)" > "$HDR"
 
 q() {
   local sql=$1 ro=$2 body resp code json
   body=$(jq -n --arg q "$sql" --argjson ro "$ro" '{query:$q, read_only:$ro}')
   resp=$(curl -sS -w '\n%{http_code}' -X POST \
     "https://api.supabase.com/v1/projects/$REF/database/query" \
-    -H "Authorization: Bearer $TOK" \
+    -H @"$HDR" \
     -H "Content-Type: application/json" \
     --data "$body")
   code=${resp##*$'\n'}
