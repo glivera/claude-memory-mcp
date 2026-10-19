@@ -75,7 +75,8 @@ MCP_PORT              — default: 3101
 
 - **Table:** `all_global_project_memory` (id, project_id, memory_type, title, content, tags, embedding vector(1536), session_id, created_at, expires_at)
 - **Table:** `skill_patterns` (id, pattern_id, description, category, project, examples jsonb, count, first_seen, last_seen, proposed_skill, skill_created, embedding vector(1536))
-- **RPC:** `all_global_match_memories_v2(query_embedding, filter_project, filter_type, match_count, threshold, min_created_at)` — vector similarity search, filters expired entries, returns status/provenance/trust_score (migrations/005)
+- **RPC:** `all_global_match_memories_v2(query_embedding, filter_project, filter_type, match_count, threshold, min_created_at)`: vector similarity search, filters expired entries, returns status/provenance/trust_score (from migrations/005, body replaced by migrations/008: iterative HNSW scan so project-filtered recall returns the full match_count)
+- **RPC:** `match_memories_with_links_v2(...)` : recall with follow_links, same provenance columns (from migrations/005, body replaced by migrations/008 with the same iterative-scan fix)
 - **RPC:** `match_skill_patterns(query_embedding, match_threshold, match_count, filter_category, filter_project)` — pattern dedup and search
 - **RPC:** `get_mature_patterns(min_count, filter_category, exclude_created)` — patterns seen N+ times
 - **View:** `all_global_memory_stats` — per-project stats (project_id, memory_type, count, last_updated)
@@ -104,8 +105,18 @@ src/
     patterns-index.ts   — barrel: registers all 4 pattern tools
     update-memory-status.ts — update status → append note + re-embed on closing statuses
     list-memories.ts    — exact-filter select → compact rows + count, no embedding
-migrations/
+migrations/              : see migrations/README.md (applied by hand; no 006 by design)
   002_skill_patterns.sql — skill_patterns table, indexes, RPC functions
+  003_orchestration_hardening.sql : goal/deviation types, linked_to/relation/status, orchestration RPCs
+  004_hybrid_recall_provenance.sql : provenance/trust_score columns, FTS index, hybrid RPC
+  005_recall_full_columns.sql : v2 recall RPCs returning status/provenance/trust_score
+  007_hv512_hnsw_index.sql : hv512 HNSW index (NOT APPLIED, deferred)
+  008_filtered_recall_iterative_scan.sql : iterative HNSW scan for filtered recall (applied 2026-10-20)
+bin/
+  up, down              : start/stop via Doppler injection (see bin/README.md)
+  recall-eval.ts        : cosine vs hybrid recall@10 eval
+  smoke-filtered-recall.sh : read-only filtered-recall regression test (expects 6/6)
+  apply-007-hv512.sh    : one-off apply for deferred migration 007 (delete after applying)
 tests/unit/             — 199 tests (mirrors src/ structure, mocks Supabase+OpenAI)
 ```
 
@@ -128,6 +139,7 @@ tests/unit/             — 199 tests (mirrors src/ structure, mocks Supabase+Op
 - MCP client loses session after container restart — requires Claude Code session restart
 - `.env.example` still references OpenRouter (outdated, actual config uses direct OpenAI)
 - dev and memory-mcp services both bind port 3101 — can't run simultaneously
+- Shared instance nlvvhfwagdlfjjhouuae is IOPS-capped; ss_wl_events (other project, 5.8 GB) evicts this table's working set; cold project-filtered recall 0.3 to 1.4 s, warm under 20 ms (measured 2026-10-20 after 008). Index 007 (hv512 HNSW) deferred until that neighbour is cleaned up, see docs/PLAN-index-tuning-2026-10-20.md.
 
 ## v0.2 — Orchestration & Hardening (released 2026-04-19)
 

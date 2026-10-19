@@ -1,5 +1,29 @@
 # Index tuning plan: all_global_project_memory (2026-10-20)
 
+## Status (2026-10-20)
+
+Founder approved via hub ("да согласен"). The filtered-recall fix shipped as migration 008 (applied, smoke 6/6). Migration 007 and steps 2 to 3 are deferred until the ss_wl_events cleanup lands and memory-mcp is re-measured.
+
+Post-apply measurement (all rows returned 5/5):
+
+| Query vector | Project | Cold ms (reads) | Warm ms |
+|---|---|---|---|
+| d27f | n8n-pilot | 280 (96) | 8.7 |
+| d27f | freelance-hub | 1419 (542) | 19.3 |
+| d27f | astro-forge | 27.5 (6) | 12.7 |
+| d27f | stock-signal-scanner | 269 (89) | 15.4 |
+| d27f | gaming-terminal-console | 1160 (930) | 13.8 |
+| d27f | memory-mcp | 6.8 (0) | 3.4 |
+| d27f | unfiltered | 13.8 (3) | 4.7 |
+| b045 | n8n-pilot | 405 (22) | 4.9 |
+| b045 | freelance-hub | 1283 (302) | 11.0 |
+| b045 | others | under 20 | under 20 |
+
+- Links_v2, n8n-pilot: follow_links false 5 rows in 15 ms, true 7 rows in 26 ms.
+- Rare filter_type goal: unfiltered 5 rows in 156 ms, n8n-pilot 1 row in 2.3 ms (only 1 exists).
+- GUC leak check after a call: hnsw.iterative_scan is off.
+- Before 008 the same filters returned 1 of 5 (n8n-pilot) and 0 of 5 (stock-signal-scanner).
+
 ## Trigger
 
 Hub Supabase load audit 2026-10-19 (personal instance nlvvhfwagdlfjjhouuae): INSERT 6,891 calls at 646 ms mean; all_global_match_memories 11,233 calls at 268 ms; all_global_match_memories_v2 7,273 calls at 384 ms. Diagnosis was read-only (pg_stat_statements, pg_statio, EXPLAIN ANALYZE via Management API read_only).
