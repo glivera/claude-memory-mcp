@@ -110,13 +110,13 @@ migrations/              : see migrations/README.md (applied by hand; no 006 by 
   003_orchestration_hardening.sql : goal/deviation types, linked_to/relation/status, orchestration RPCs
   004_hybrid_recall_provenance.sql : provenance/trust_score columns, FTS index, hybrid RPC
   005_recall_full_columns.sql : v2 recall RPCs returning status/provenance/trust_score
-  007_hv512_hnsw_index.sql : hv512 HNSW index (NOT APPLIED, deferred)
+  007_hv512_hnsw_index.sql : hv512 HNSW index (NOT APPLIED, SHELVED 2026-10-20)
   008_filtered_recall_iterative_scan.sql : iterative HNSW scan for filtered recall (applied 2026-10-20)
 bin/
   up, down              : start/stop via Doppler injection (see bin/README.md)
   recall-eval.ts        : cosine vs hybrid recall@10 eval
   smoke-filtered-recall.sh : read-only filtered-recall regression test (expects 6/6)
-  apply-007-hv512.sh    : one-off apply for deferred migration 007 (delete after applying)
+  apply-007-hv512.sh    : one-off apply for shelved migration 007 (delete after applying)
 tests/unit/             — 199 tests (mirrors src/ structure, mocks Supabase+OpenAI)
 ```
 
@@ -139,7 +139,7 @@ tests/unit/             — 199 tests (mirrors src/ structure, mocks Supabase+Op
 - MCP client loses session after container restart — requires Claude Code session restart
 - `.env.example` still references OpenRouter (outdated, actual config uses direct OpenAI)
 - dev and memory-mcp services both bind port 3101 — can't run simultaneously
-- Shared instance nlvvhfwagdlfjjhouuae is IOPS-capped; ss_wl_events (other project, 5.8 GB) evicts this table's working set; cold project-filtered recall 0.3 to 1.4 s, warm under 20 ms (measured 2026-10-20 after 008). Index 007 (hv512 HNSW) deferred until that neighbour is cleaned up, see docs/PLAN-index-tuning-2026-10-20.md.
+- Shared instance nlvvhfwagdlfjjhouuae is IOPS-capped; ss_wl_events (other project, 5.8 GB) evicts this table's working set; cold project-filtered recall 0.3 to 1.4 s, warm under 20 ms (measured 2026-10-20 after 008). Neighbour cleanup done 2026-10-20: warm DB recall 2.5 to 7 ms, latency is network (REST floor 140 to 220 ms). Index 007 (hv512 HNSW) SHELVED, see docs/PLAN-index-tuning-2026-10-20.md.
 
 ## v0.2 — Orchestration & Hardening (released 2026-04-19)
 

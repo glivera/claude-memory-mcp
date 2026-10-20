@@ -10,7 +10,7 @@ Operator scripts for running the memory-mcp container, evaluating recall quality
 | down | Runs `docker compose down` with passed args and removes any legacy .env. Note it is a bare project-wide down: pass nothing unusual and do not use it on shared stands. |
 | recall-eval.ts | Computes recall@10 for plain cosine vs hybrid RPC over a query set (tests/eval/queries.local.json, gitignored; falls back to queries.example.json, a format demo only). Embeds each query via OpenAI and prints per-query and average scores plus delta. |
 | smoke-filtered-recall.sh | Read-only regression test for project-filtered recall. Calls the recall RPCs through PostgREST, 6 cases, expects 6/6 since migration 008. Reads a fixed memory's embedding as the query vector; tokens go through a 0600 header file, never argv. |
-| apply-007-hv512.sh | One-off apply for deferred migration 007. `--dry-run` executes every preflight (role, statement_timeout, pgvector, row counts) and stops before the build. Aborts while statement_timeout is below 10 min (currently 2min on the API role). Delete after 007 is applied. |
+| apply-007-hv512.sh | One-off apply for migration 007 (SHELVED 2026-10-20; its 10 min gate must be dropped if resumed with plain CREATE INDEX). `--dry-run` executes every preflight (role, statement_timeout, pgvector, row counts) and stops before the build. Aborts while statement_timeout is below 10 min (currently 2min on the API role). Delete after 007 is applied. |
 
 ## Relationships
 

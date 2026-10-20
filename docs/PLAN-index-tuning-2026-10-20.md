@@ -2,7 +2,7 @@
 
 ## Status (2026-10-20)
 
-Founder approved via hub ("да согласен"). The filtered-recall fix shipped as migration 008 (applied, smoke 6/6). Migration 007 and steps 2 to 3 are deferred until the ss_wl_events cleanup lands and memory-mcp is re-measured.
+Founder approved via hub ("да согласен"). The filtered-recall fix shipped as migration 008 (applied, smoke 6/6). Migration 007 and steps 2 to 3 are SHELVED (founder, 2026-10-20): after the ss_wl_events cleanup, warm DB recall is 2.5 to 7 ms and latency is network (REST floor 140 to 220 ms); only a cold tail of ~0.9 s remains. To resume: extend bin/recall-eval.ts (8aa40d6c), write the step 2 RPC rewrite, then build with plain CREATE INDEX (not CONCURRENTLY; 14k rows fit the 2-minute timeout) and drop the 10-minute gate in bin/apply-007-hv512.sh.
 
 Post-apply measurement (all rows returned 5/5):
 
