@@ -13,7 +13,7 @@ import { registerOrchestrationTools } from './tools/orchestration-index.js';
 import { logToolCall } from './log.js';
 
 const TRANSPORT = process.env.MCP_TRANSPORT || 'http';
-const PORT = parseInt(process.env.MCP_PORT || '3100', 10);
+const PORT = parseInt(process.env.MCP_PORT || '3101', 10);
 
 function formatError(err: unknown): { content: Array<{ type: 'text'; text: string }>; isError: true } {
   const message = err instanceof Error ? err.message : String(err);
@@ -66,7 +66,7 @@ function registerTools(server: McpServer): void {
 
   server.tool(
     'forget',
-    'Soft-delete outdated or incorrect memories. Requires project_id (kebab-case), which must match the owning project of the memory. Use memory_id to forget one entry, or omit it to forget all memories for the project. Add older_than_days to only forget old entries. Never hard-deletes: data can be recovered. Safe to repeat: re-forgetting an already-expired memory in the right project returns count 1 (expires_at refreshed), not 0.',
+    'Soft-delete ONE memory by id. Requires memory_id (uuid) and project_id (kebab-case, must match the memory owner). Bulk/project-wide forget is not supported. Never hard-deletes. An already-expired memory is a no-op reported as already_expired.',
     forgetInputSchemaBase.shape,
     async (input) => {
       const startMs = Date.now();
@@ -115,7 +115,7 @@ function checkStartupConfig(): void {
 }
 
 async function startStdio(): Promise<void> {
-  const server = new McpServer({ name: 'memory', version: '0.4.0' });
+  const server = new McpServer({ name: 'memory', version: '0.5.0' });
   registerTools(server);
   const transport = new StdioServerTransport();
   await server.connect(transport);
@@ -135,7 +135,7 @@ function startHttp(): void {
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
       });
-      const server = new McpServer({ name: 'memory', version: '0.4.0' });
+      const server = new McpServer({ name: 'memory', version: '0.5.0' });
       registerTools(server);
       await server.connect(transport);
       await transport.handleRequest(req, res, req.body);

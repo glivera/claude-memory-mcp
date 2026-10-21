@@ -32,12 +32,12 @@ Runtime of the memory-mcp server: an Express (HTTP) or stdio MCP server that exp
 
 ## Gotchas
 
-- `MCP_PORT` default in index.ts is 3100, while CLAUDE.md and docker-compose use 3101. The container must set `MCP_PORT=3101`; do not rely on the code default. index.ts reads `process.env` directly for transport and port, not through config.ts.
-- MCP server version string `0.4.0` is hardcoded twice in index.ts (stdio and HTTP branches).
+- `MCP_PORT` default in index.ts is 3101 (same as CLAUDE.md and docker-compose). index.ts reads `process.env` directly for transport and port, not through config.ts.
+- MCP server version string `0.5.0` is hardcoded twice in index.ts (stdio and HTTP branches).
 - `formatError` is duplicated: index.ts prefixes `[ValidationError]`/`[EmbeddingError]`/`[DbError]`, while `tools/patterns-index.ts` and `tools/orchestration-index.ts` emit a generic `[Error]`.
 - Stateless HTTP: each request builds a new McpServer and registers all tools again. There are no session ids despite older docs.
 - Threshold above 0.4 silently returns empty recall results (startup warning only, no failure).
-- Expiry filtering: RPCs and queries must exclude expired rows (`expires_at IS NULL OR > now()`). `expireMemoryById` and `expireMemoriesByProject` intentionally omit that guard (PostgREST 42703 and wrong-count quirk, explained in code comments), so re-forgetting refreshes `expires_at`.
+- Expiry filtering: RPCs and queries must exclude expired rows (`expires_at IS NULL OR > now()`). `expireMemoryById` (forget is by-id only) does not use an `or()` guard on the update (PostgREST 42703 with update + select); it reads the row first, returns `already_expired` without writing if `expires_at` has passed, and otherwise updates.
 - `updateStatus` with a `resolution_note` does read, append a `[CLOSURE ...]` line, re-embed, then update (not atomic; last write wins). Without a note it only changes status.
 - `listMemories` and `getLatestContext` filter by `project_id` only; they never use embeddings.
 - `token-counter.ts` counts chars / 4, an estimate; `truncateToTokenLimit` only truncates the first entry that overflows (and only if more than 20 tokens remain).

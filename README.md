@@ -332,22 +332,20 @@ Returns memories ranked by semantic similarity, capped at `RECALL_TOKEN_CAP` tok
 
 ### `forget`
 
-Soft-delete memories (sets `expires_at`, never hard-deletes). `project_id` is required on every call and must match the memory's owning project (ownership check), protecting against cross-project id confusion.
+Soft-delete ONE memory by id (sets `expires_at`, never hard-deletes). By-id only: project-wide and `older_than_days` forgets are not supported. `project_id` must match the memory's owning project (ownership check), protecting against cross-project id confusion.
 
 | Parameter | Type | Required | Description |
 |---|---|---|---|
+| `memory_id` | string (UUID) | Yes | The memory to expire |
 | `project_id` | string | Yes | kebab-case project identifier; must match the memory's owning project |
-| `memory_id` | string (UUID) | No | Delete a specific memory. Omit to delete all memories for the project |
-| `older_than_days` | number | No | Only expire memories older than N days |
 
-**Examples:**
+**Example:**
 
 ```
 forget(memory_id: "550e8400-e29b-41d4-a716-446655440000", project_id: "my-project")
-forget(project_id: "my-project", older_than_days: 90)
 ```
 
-**Repeat-forget is safe.** Calling `forget` again on an already-expired memory in the right project always matches the row and returns `expired_count: 1` (it refreshes `expires_at`, which is harmless). This is not "count 0 for already-expired": there is no pre-read; the semantics are "the row was matched", not "the row's expiry state changed".
+**Result:** `{ memory_id, project_id, expired_count: 1 }` when a live memory was expired. If the memory was already expired, nothing is written and the result is `{ memory_id, project_id, expired_count: 0, already_expired: true }`. Unknown ids and ids owned by another project are validation errors.
 
 ### `project_status`
 
@@ -588,7 +586,7 @@ src/
   tools/
     remember.ts         — Embed title+content -> insert into Supabase
     recall.ts           — Embed query -> vector search -> token-capped response
-    forget.ts           — Soft-delete by ID, project, or age
+    forget.ts           — Soft-delete by ID only
     project-status.ts   — Stats view query + latest context
     pattern-store.ts    — Smart upsert with deduplication (similarity > 0.75)
     pattern-search.ts   — Semantic search across skill patterns
@@ -603,7 +601,7 @@ src/
     orchestration-index.ts — Barrel: registers all 5 orchestration tools
 migrations/
   002_skill_patterns.sql — Skill patterns table, indexes, RPC functions
-tests/unit/             — 199 unit tests (Vitest, mocks Supabase + OpenAI)
+tests/unit/             — 206 unit tests (Vitest, mocks Supabase + OpenAI)
 ```
 
 ## License

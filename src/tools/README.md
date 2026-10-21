@@ -8,7 +8,7 @@ One module per MCP tool: each exports a Zod input schema and an async `handleX` 
 |------|---------|
 | remember.ts | `remember`: embeds `title + content`, inserts via `insertMemory`. Also the source of shared constants `MEMORY_TYPES` (12), `RELATIONS` (6), `STATUSES` (4). Defaults: status `open`, provenance `user_authored`, trust_score 1.0 (0.5 if provenance is `recalled_external`). `expires_in_days` becomes `expires_at`. |
 | recall.ts | `recall`: embeds the query, picks one of three RPC paths (see Gotchas), applies `linked_type` filter, slices to limit, truncates to `RECALL_TOKEN_CAP` tokens. Exports `wrapRecallResult` (wraps output in `{notice, memories}` when `RECALL_ENVELOPE=1`) and the `RECALL_NOTICE` anti-prompt-injection text. |
-| forget.ts | `forget`: soft-delete by `memory_id` or whole project (optionally `older_than_days`). Requires `project_id` ownership match. |
+| forget.ts | `forget`: soft-delete ONE memory by `memory_id` (by-id only, strict schema). Requires `project_id` ownership match. Already-expired memory is a no-op returning `already_expired: true`. |
 | project-status.ts | `project_status`: per-project counts from the stats view plus the latest `context` memory; one extra query per project. |
 | update-memory-status.ts | `update_memory_status`: changes status; closing statuses (`resolved`, `waived`, `superseded`) require `resolution_note`, which is appended and re-embedded in db.ts. |
 | list-memories.ts | `list_memories`: exact-filter listing (type, status, since_days, limit up to 100, default 50) with an exact total count; no embedding. |
@@ -42,7 +42,7 @@ One module per MCP tool: each exports a Zod input schema and an async `handleX` 
 - recall output cap is token-approximate (chars / 4) and may cut the last entry's content with ` [truncated]`.
 - pattern-store, pattern-search, pattern-mature and pattern-mark call `getSupabaseClient()` directly instead of db.ts helpers (inconsistent layering, harder to mock).
 - pattern-store wraps embedding errors in `EmbeddingError` again (double wrap of what `generateEmbedding` already throws). Dedup is per category and project, so the same idea in two projects is stored twice.
-- `forget` with no `memory_id` and no `older_than_days` expires every memory in the project.
+- `forget` is by-id only: bulk params (`older_than_days`) and a missing `memory_id` are rejected with a ValidationError.
 - `formatError` is duplicated in both barrels (generic `[Error]` prefix) and differs from index.ts.
 - Every handler re-parses input with `safeParse` even though the SDK already validated the shape; deliberate so direct calls (tests) are validated too.
 - project_id must be kebab-case in write tools; recall's `project_id` is unvalidated.

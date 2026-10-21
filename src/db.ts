@@ -339,19 +339,30 @@ export async function listMemories(
   return { memories: (data ?? []) as MemoryListRow[], total: count ?? 0 };
 }
 
-export async function expireMemoryById(memoryId: string, projectId: string): Promise<number> {
+export async function expireMemoryById(
+  memoryId: string,
+  projectId: string
+): Promise<'expired' | 'already_expired'> {
   const db = getSupabaseClient();
-  // Idempotent: re-expiring an already-expired row (in the right project)
-  // is a no-op from the recall perspective (it's already filtered out)
-  // but will refresh expires_at and still return count 1. We omit the
-  // or() guard on expires_at here for two reasons:
-  //   1. PostgREST rejects `or(expires_at...)` + `select('id')` + UPDATE
-  //      with error 42703 "column expires_at does not exist" because the
-  //      RETURNING projection doesn't include expires_at.
-  //   2. After SET expires_at=now(), the RETURNING row has
-  //      expires_at=now() (not > now()), so PostgREST re-applying the
-  //      filter on the returned row yields empty data → count=0 even
-  //      though the UPDATE succeeded. Semantically wrong.
+  const { data: row, error: readError } = await db
+    .from(TABLE)
+    .select('id, project_id, expires_at')
+    .eq('id', memoryId)
+    .maybeSingle();
+
+  if (readError) {
+    throw new DbError(`Expire by ID read failed: ${readError.message}`, { cause: readError });
+  }
+  if (!row) throw new ValidationError(`Memory ${memoryId} not found`);
+  if (row.project_id !== projectId) {
+    throw new ValidationError(`Memory ${memoryId} belongs to project ${row.project_id}, not ${projectId}`);
+  }
+  if (row.expires_at && new Date(row.expires_at).getTime() <= Date.now()) {
+    return 'already_expired';
+  }
+
+  // The live-row check is the read above: an or() guard on expires_at combined
+  // with update + select('id') raises 42703 in PostgREST.
   const { data, error } = await db
     .from(TABLE)
     .update({ expires_at: new Date().toISOString() })
@@ -360,35 +371,8 @@ export async function expireMemoryById(memoryId: string, projectId: string): Pro
     .select('id');
 
   if (error) throw new DbError(`Expire by ID failed: ${error.message}`, { cause: error });
-  const count = data?.length ?? 0;
-  if (count === 0) throw await resolveNotFoundError(memoryId, projectId);
-  return count;
-}
-
-export async function expireMemoriesByProject(
-  projectId: string,
-  olderThanDays?: number
-): Promise<number> {
-  const db = getSupabaseClient();
-  // Same PostgREST quirk as expireMemoryById — or() guard on expires_at
-  // combined with UPDATE + select yields both 42703 errors and wrong
-  // counts. Idempotent: already-expired rows will have expires_at
-  // refreshed, which is acceptable for project-wide cleanup.
-  let query = db
-    .from(TABLE)
-    .update({ expires_at: new Date().toISOString() })
-    .eq('project_id', projectId);
-
-  if (olderThanDays !== undefined) {
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - olderThanDays);
-    query = query.lt('created_at', cutoff.toISOString());
-  }
-
-  const { data, error } = await query.select('id');
-
-  if (error) throw new DbError(`Expire by project failed: ${error.message}`, { cause: error });
-  return data?.length ?? 0;
+  if ((data?.length ?? 0) === 0) return 'already_expired';
+  return 'expired';
 }
 
 export async function getMemoryStats(projectId?: string): Promise<MemoryStats[]> {

@@ -1,6 +1,16 @@
 # Plan: forget bulk guard + MCP_PORT single source of truth (2026-10-20)
 
-Status: PROPOSED, awaiting founder approval. No code, server or data was changed.
+Status: AMENDED 2026-10-21 by founder decision ("да, убираем массовое удаление"; reason: memory is history, mass deletes make no sense, long-term cleanup is rare). Sections 2, 2a, 2b below (dry-run/confirm_count/cap design) are SUPERSEDED and kept only as the audit trail. Sections 1 and 3 stand.
+
+## 0. Decision as built
+
+- `forget` is BY-ID ONLY: `memory_id` (uuid) and `project_id` are both required, schema is strict. A call with only `project_id`, or carrying `older_than_days`, is rejected with a clear error. The bulk code path (`expireMemoriesByProject`) and its params are deleted.
+- Ownership check and soft delete are kept. The by-id path only expires a LIVE row: an already-expired row is a no-op reported as `already_expired:true`, `expired_count:0`, nothing written (original `expires_at` survives).
+- MCP behaviour note: the SDK strips unknown keys before the handler, so `{memory_id, project_id, older_than_days}` over MCP acts as a plain by-id call (harmless); `{project_id, older_than_days}` fails on the missing `memory_id`. Direct handler calls reject unknown keys explicitly.
+- Long-term retention cleanup is NOT part of the MCP and is not built now. If ever needed it is a separate founder-run script with `--dry-run`, never an agent-callable tool.
+- Port: code default and `EXPOSE` are 3101 (section 3).
+- Deploy is founder-run: `deploy-forget.sh` in the repo root (`--dry-run` builds, tests and checks config, stops before recreate; the real run recreates only the `memory-mcp` service, never compose down).
+- Residual risk: `mcp__memory__forget` stays in the global auto-allow list (founder config), but with by-id only the blast radius is one row per call.
 
 ## 1. Findings (read-only)
 

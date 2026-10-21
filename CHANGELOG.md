@@ -6,6 +6,21 @@ versioning follows [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [0.5.0] - 2026-10-21
+
+### Changed
+
+- **BREAKING: `forget` is by-id only.** `memory_id` and `project_id` are both
+  required; project-wide forget and `older_than_days` are removed (the input
+  schema is strict and rejects them with a clear error).
+- Forgetting an already-expired memory is a no-op: nothing is written and the
+  result is `{ expired_count: 0, already_expired: true }`. Previously it
+  refreshed `expires_at` and returned count 1.
+- `MCP_PORT` code default is now `3101` (was `3100`), matching docker-compose.
+- Dockerfile `EXPOSE 3101` (was `3100`).
+
+---
+
 ## [0.4.0] — 2026-08-15
 
 ### Added

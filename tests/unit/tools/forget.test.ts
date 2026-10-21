@@ -2,15 +2,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../../src/db.js', () => ({
   expireMemoryById: vi.fn(),
-  expireMemoriesByProject: vi.fn(),
 }));
 
 import { handleForget } from '../../../src/tools/forget.js';
-import { expireMemoryById, expireMemoriesByProject } from '../../../src/db.js';
+import { expireMemoryById } from '../../../src/db.js';
 import { ValidationError } from '../../../src/errors.js';
 
 const mockExpireById = vi.mocked(expireMemoryById);
-const mockExpireByProject = vi.mocked(expireMemoriesByProject);
+
+const MEMORY_ID = '550e8400-e29b-41d4-a716-446655440000';
 
 describe('handleForget', () => {
   beforeEach(() => {
@@ -18,135 +18,146 @@ describe('handleForget', () => {
   });
 
   describe('forget by memory_id', () => {
-    it('should expire a single memory by ID', async () => {
-      mockExpireById.mockResolvedValue(1);
+    it('should call expireMemoryById with (memory_id, project_id)', async () => {
+      mockExpireById.mockResolvedValue('expired');
 
-      const result = await handleForget({
-        memory_id: '550e8400-e29b-41d4-a716-446655440000',
+      await handleForget({ memory_id: MEMORY_ID, project_id: 'my-project' });
+
+      expect(mockExpireById).toHaveBeenCalledTimes(1);
+      expect(mockExpireById).toHaveBeenCalledWith(MEMORY_ID, 'my-project');
+    });
+
+    it('should return expired_count 1 and echo ids when the memory was expired', async () => {
+      mockExpireById.mockResolvedValue('expired');
+
+      const result = await handleForget({ memory_id: MEMORY_ID, project_id: 'my-project' });
+
+      expect(result).toEqual({
+        memory_id: MEMORY_ID,
         project_id: 'my-project',
+        expired_count: 1,
       });
+    });
 
-      expect(mockExpireById).toHaveBeenCalledWith(
-        '550e8400-e29b-41d4-a716-446655440000',
-        'my-project'
+    it('should not include a warning or already_expired field on a fresh expiry', async () => {
+      mockExpireById.mockResolvedValue('expired');
+
+      const result = await handleForget({ memory_id: MEMORY_ID, project_id: 'my-project' });
+
+      expect(result).not.toHaveProperty('warning');
+      expect(result).not.toHaveProperty('already_expired');
+    });
+  });
+
+  describe('project-only call', () => {
+    it('should throw ValidationError mentioning memory_id when memory_id is missing', async () => {
+      await expect(handleForget({ project_id: 'my-project' } as any)).rejects.toThrow(
+        ValidationError
       );
-      expect(result.expired_count).toBe(1);
+      await expect(handleForget({ project_id: 'my-project' } as any)).rejects.toThrow(
+        /forget requires memory_id/
+      );
     });
 
-    it('should use the provided project_id in the result', async () => {
-      mockExpireById.mockResolvedValue(1);
+    it('should not call the db when memory_id is missing', async () => {
+      await expect(handleForget({ project_id: 'my-project' } as any)).rejects.toThrow();
 
-      const result = await handleForget({
-        memory_id: '550e8400-e29b-41d4-a716-446655440000',
-        project_id: 'my-project',
-      });
-
-      expect(result.project_id).toBe('my-project');
+      expect(mockExpireById).not.toHaveBeenCalled();
     });
   });
 
-  describe('forget by project_id', () => {
-    it('should expire all memories for a project', async () => {
-      mockExpireByProject.mockResolvedValue(5);
+  describe('bulk params rejected', () => {
+    it('should reject {project_id, older_than_days} with a by-id only ValidationError', async () => {
+      const call = () => handleForget({ project_id: 'my-project', older_than_days: 30 } as any);
 
-      const result = await handleForget({
-        project_id: 'my-project',
-      });
-
-      expect(mockExpireByProject).toHaveBeenCalledWith('my-project', undefined);
-      expect(result.expired_count).toBe(5);
-      expect(result.project_id).toBe('my-project');
+      await expect(call()).rejects.toThrow(ValidationError);
+      await expect(call()).rejects.toThrow(/by-id only/);
     });
 
-    it('should include warning when expiring entire project (no older_than_days)', async () => {
-      mockExpireByProject.mockResolvedValue(3);
+    it('should reject {memory_id, project_id, older_than_days} with a by-id only ValidationError', async () => {
+      const call = () =>
+        handleForget({
+          memory_id: MEMORY_ID,
+          project_id: 'my-project',
+          older_than_days: 30,
+        } as any);
 
-      const result = await handleForget({
-        project_id: 'my-project',
-      });
-
-      expect(result.warning).toContain('my-project');
-      expect(result.warning).toContain('expired');
-    });
-  });
-
-  describe('forget by project_id + older_than_days', () => {
-    it('should expire old memories for a project', async () => {
-      mockExpireByProject.mockResolvedValue(2);
-
-      const result = await handleForget({
-        project_id: 'my-project',
-        older_than_days: 30,
-      });
-
-      expect(mockExpireByProject).toHaveBeenCalledWith('my-project', 30);
-      expect(result.expired_count).toBe(2);
-      expect(result.project_id).toBe('my-project');
+      await expect(call()).rejects.toThrow(ValidationError);
+      await expect(call()).rejects.toThrow(/by-id only/);
     });
 
-    it('should not include warning when older_than_days is specified', async () => {
-      mockExpireByProject.mockResolvedValue(2);
+    it('should not call the db when bulk params are present', async () => {
+      await expect(
+        handleForget({ project_id: 'my-project', older_than_days: 30 } as any)
+      ).rejects.toThrow();
+      await expect(
+        handleForget({
+          memory_id: MEMORY_ID,
+          project_id: 'my-project',
+          older_than_days: 30,
+        } as any)
+      ).rejects.toThrow();
 
-      const result = await handleForget({
-        project_id: 'my-project',
-        older_than_days: 30,
-      });
-
-      expect(result.warning).toBeUndefined();
+      expect(mockExpireById).not.toHaveBeenCalled();
     });
   });
 
-  describe('repeat forget (idempotency)', () => {
-    it('should return count 1 without error when forgetting an already-expired memory in the right project', async () => {
-      mockExpireById.mockResolvedValue(1);
+  describe('already-expired no-op', () => {
+    it('should return expired_count 0 and already_expired true', async () => {
+      mockExpireById.mockResolvedValue('already_expired');
 
-      const result = await handleForget({
-        memory_id: '550e8400-e29b-41d4-a716-446655440000',
+      const result = await handleForget({ memory_id: MEMORY_ID, project_id: 'my-project' });
+
+      expect(result).toEqual({
+        memory_id: MEMORY_ID,
         project_id: 'my-project',
+        expired_count: 0,
+        already_expired: true,
       });
+    });
 
-      expect(result.expired_count).toBe(1);
+    it('should not include a warning field', async () => {
+      mockExpireById.mockResolvedValue('already_expired');
+
+      const result = await handleForget({ memory_id: MEMORY_ID, project_id: 'my-project' });
+
+      expect(result).not.toHaveProperty('warning');
     });
   });
 
   describe('ownership', () => {
-    it('should propagate a "belongs to project" error from the db layer', async () => {
+    it('should propagate a "belongs to project" ValidationError from the db layer', async () => {
       mockExpireById.mockRejectedValue(
-        new ValidationError(
-          'Memory 550e8400-e29b-41d4-a716-446655440000 belongs to project other-project, not my-project'
-        )
+        new ValidationError(`Memory ${MEMORY_ID} belongs to project other-project, not my-project`)
       );
 
-      await expect(
-        handleForget({
-          memory_id: '550e8400-e29b-41d4-a716-446655440000',
-          project_id: 'my-project',
-        })
-      ).rejects.toThrow('belongs to project other-project, not my-project');
+      const call = () => handleForget({ memory_id: MEMORY_ID, project_id: 'my-project' });
+
+      await expect(call()).rejects.toThrow(ValidationError);
+      await expect(call()).rejects.toThrow('belongs to project other-project, not my-project');
     });
   });
 
   describe('validation errors', () => {
-    it('should throw ValidationError when project_id is missing', async () => {
-      await expect(handleForget({} as any)).rejects.toThrow(ValidationError);
+    it('should throw ValidationError for an invalid UUID memory_id', async () => {
+      await expect(
+        handleForget({ memory_id: 'not-a-uuid', project_id: 'my-project' })
+      ).rejects.toThrow(ValidationError);
+      expect(mockExpireById).not.toHaveBeenCalled();
     });
 
     it('should throw ValidationError when project_id is not kebab-case', async () => {
       await expect(
-        handleForget({ project_id: 'My Project' } as any)
+        handleForget({ memory_id: MEMORY_ID, project_id: 'My Project' })
       ).rejects.toThrow(ValidationError);
+      expect(mockExpireById).not.toHaveBeenCalled();
     });
 
-    it('should throw ValidationError for invalid UUID memory_id', async () => {
-      await expect(
-        handleForget({ memory_id: 'not-a-uuid', project_id: 'my-project' })
-      ).rejects.toThrow(ValidationError);
-    });
-
-    it('should throw ValidationError for negative older_than_days', async () => {
-      await expect(
-        handleForget({ project_id: 'my-project', older_than_days: -1 })
-      ).rejects.toThrow(ValidationError);
+    it('should throw ValidationError when project_id is missing', async () => {
+      await expect(handleForget({ memory_id: MEMORY_ID } as any)).rejects.toThrow(
+        ValidationError
+      );
+      expect(mockExpireById).not.toHaveBeenCalled();
     });
   });
 });

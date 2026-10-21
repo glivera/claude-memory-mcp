@@ -8,7 +8,7 @@ Vitest tests for the tool handlers in `src/tools/`, one `*.test.ts` per handler.
 |------|---------|
 | recall.test.ts | Largest suite: RPC routing (plain v2 vs links vs hybrid), `since_days` cutoff, `status`/`follow_links`/`linked_type` filtering, limit defaults, token cap truncation, provenance and trust_score passthrough, `wrapRecallResult` envelope on/off. |
 | remember.test.ts | Input validation (kebab-case, title length, enums), embedding of `title + content`, provenance and trust_score defaults, `expires_in_days`, links and status fields. |
-| forget.test.ts | Forget by id vs by project, `older_than_days`, ownership errors, idempotent re-forget count. |
+| forget.test.ts | Forget by id only: project-only and bulk params rejected, ownership errors, already-expired no-op. |
 | project-status.test.ts | Aggregation of stats rows into per-project counts and totals, latest context lookup. |
 | update-memory-status.test.ts | Closing statuses require `resolution_note`, re-open path, not-found and wrong-project errors. |
 | list-memories.test.ts | Filter passthrough, default and max limit, total count. |

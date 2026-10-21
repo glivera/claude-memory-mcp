@@ -13,7 +13,7 @@
 - **Transport:** Streamable HTTP (Express 5, port 3101)
 - **Database:** Supabase PostgreSQL + pgvector (cloud instance `nlvvhfwagdlfjjhouuae`)
 - **Embeddings:** OpenAI text-embedding-3-small (1536 dims, direct API)
-- **Testing:** Vitest (199 unit tests)
+- **Testing:** Vitest (206 unit tests)
 
 ## Architecture
 
@@ -96,7 +96,7 @@ src/
   tools/
     remember.ts         — embed title+content → insert
     recall.ts           — embed query → RPC vector search → token cap → since_days filter
-    forget.ts           — soft-delete (by id, project, or age)
+    forget.ts           — soft-delete (by id only)
     project-status.ts   — stats view query + latest context
     pattern-store.ts    — smart upsert with dedup (threshold 0.75)
     pattern-search.ts   — semantic search across skill patterns
@@ -117,7 +117,7 @@ bin/
   recall-eval.ts        : cosine vs hybrid recall@10 eval
   smoke-filtered-recall.sh : read-only filtered-recall regression test (expects 6/6)
   apply-007-hv512.sh    : one-off apply for shelved migration 007 (delete after applying)
-tests/unit/             — 199 tests (mirrors src/ structure, mocks Supabase+OpenAI)
+tests/unit/             — 206 tests (mirrors src/ structure, mocks Supabase+OpenAI)
 ```
 
 ## Coding Standards

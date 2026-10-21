@@ -15,5 +15,5 @@ COPY package.json package-lock.json ./
 RUN npm ci --production=true
 COPY --from=base /app/dist ./dist
 
-EXPOSE 3100
+EXPOSE 3101
 ENTRYPOINT ["node", "dist/index.js"]

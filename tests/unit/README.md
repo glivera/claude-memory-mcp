@@ -7,6 +7,7 @@ Vitest unit tests for `src/`. All Supabase and OpenAI access is mocked, so tests
 | File | Purpose |
 |------|---------|
 | config.test.ts | `getConfig` defaults, coercion, required vars, `RECALL_HYBRID`/`RECALL_ENVELOPE` enums, cache and `resetConfigCache`. |
+| db-expire.test.ts | `expireMemoryById`: not found, ownership mismatch, already-expired no-op, live row expires. |
 | embedding.test.ts | `generateEmbedding` with a mocked `openai` module: success, single retry on 429/5xx, no retry on other errors, `EmbeddingError` wrapping. |
 | errors.test.ts | Error classes: names, messages, `cause` propagation, `instanceof` checks. |
 | token-counter.test.ts | `countTokens` (chars / 4) and `truncateToTokenLimit` boundary behavior (the 20-token remainder rule, ` [truncated]` suffix). |
@@ -29,7 +30,7 @@ Related non-test asset: `../eval/queries.example.json` is a format example for a
 
 - Mirrors `src/` layout: a new source file under `src/tools/` needs a matching test in `tools/`.
 - Because db.ts is mocked, SQL or RPC behavior (including migration 008's iterative scan and the hybrid RPC from 004) is NOT verified here; use a live recall check or the eval set for that.
-- The test count in CLAUDE.md (199) can drift; recount with the runner.
+- The test count in CLAUDE.md (206) can drift; recount with the runner.
 - config tests mutate `process.env`; keep `resetConfigCache()` in `beforeEach` to avoid leakage.
 - Mocked `getConfig` objects in tool tests must list every field the handler reads (e.g. `RECALL_HYBRID`, `RECALL_ENVELOPE`), or the handler sees `undefined` and takes the wrong branch.
 
