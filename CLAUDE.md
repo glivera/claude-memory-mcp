@@ -168,3 +168,8 @@ Use them as standalone tools (toolkit mode) or via /build-module (full pipeline)
 ### Pipeline rules
 - @qa-verifier after every non-trivial implementation. Fix failures before proceeding.
 
+
+## Folder docs
+| When | Do |
+|---|---|
+| Before editing any file | read README.md (or _README.md) in its directory and in each ancestor directory up to the root |
