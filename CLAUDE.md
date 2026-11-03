@@ -7,7 +7,7 @@
 
 ## Tech Stack
 
-- **Runtime:** Node.js 20 (Alpine Docker)
+- **Runtime:** Node.js 26 LTS (Alpine Docker, pinned node:26.13.0-alpine3.24)
 - **Language:** TypeScript 5.x (strict mode, ES modules)
 - **MCP SDK:** @modelcontextprotocol/sdk ^1.12.1
 - **Transport:** Streamable HTTP (Express 5, port 3101)

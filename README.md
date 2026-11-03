@@ -30,7 +30,7 @@ Claude Code  ──HTTP POST──▸  memory-mcp container (Express + MCP SDK)
 - **Transport:** Streamable HTTP on port 3101 (multiple Claude Code sessions share one server), stdio also supported
 - **Embeddings:** OpenAI `text-embedding-3-small` (1536 dimensions)
 - **Storage:** Supabase PostgreSQL + pgvector
-- **Runtime:** Node.js 20 in Docker (Alpine)
+- **Runtime:** Node.js 26 LTS in Docker (Alpine, pinned `node:26.13.0-alpine3.24`)
 
 ## Prerequisites
 
@@ -300,6 +300,10 @@ curl -s http://localhost:3101/health
 ```
 
 If health check passes but Claude Code still can't connect, restart Claude Code (`/exit` and relaunch).
+
+## Gotchas
+
+- **Node runtime pin:** Dockerfile (both stages) uses `node:26.13.0-alpine3.24` (Node 26 "Lithium", LTS since 2026-10-28). Checked 2026-11-04 against the nodejs.org dist index and the nodejs/Release schedule: published EOL 2029-04-30. The previous base, Node 20, reached EOL on 2026-04-30. `package.json` `engines` is `>=26.13.0 <27`. When bumping, re-check the schedule and the tag on Docker Hub, and keep `@types/node` on the same major.
 
 ## Tools
 
